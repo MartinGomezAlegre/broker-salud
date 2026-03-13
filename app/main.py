@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 from app.routers import usuarios
 from app.routers import planes
 from app.routers import auth
+from app.routers import suscripciones
 
 load_dotenv()
 
@@ -15,6 +16,7 @@ app = FastAPI(
 app.include_router(usuarios.router)
 app.include_router(planes.router)
 app.include_router(auth.router)
+app.include_router(suscripciones.router)
 
 @app.get("/health")
 def health_check():
