@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.database import get_db
 from app.schemas.usuario import UsuarioCrear, UsuarioRespuesta
+from app.auth import hashear_password
 
 router = APIRouter(
     prefix="/usuarios",
@@ -11,7 +12,6 @@ router = APIRouter(
 
 @router.post("/", response_model=UsuarioRespuesta)
 def crear_usuario(usuario: UsuarioCrear, db: Session = Depends(get_db)):
-    # Verificar si el email ya existe
     existe = db.execute(
         text("SELECT id FROM usuarios WHERE email = :email"),
         {"email": usuario.email}
@@ -20,7 +20,6 @@ def crear_usuario(usuario: UsuarioCrear, db: Session = Depends(get_db)):
     if existe:
         raise HTTPException(status_code=400, detail="El email ya está registrado")
 
-    # Insertar el usuario
     db.execute(
         text("""INSERT INTO usuarios (nombre, apellido, email, telefono, fecha_nacimiento, password_hash)
            VALUES (:nombre, :apellido, :email, :telefono, :fecha_nacimiento, :password_hash)"""),
@@ -30,12 +29,11 @@ def crear_usuario(usuario: UsuarioCrear, db: Session = Depends(get_db)):
             "email": usuario.email,
             "telefono": usuario.telefono,
             "fecha_nacimiento": usuario.fecha_nacimiento,
-            "password_hash": usuario.contrasenia
+            "password_hash": hashear_password(usuario.contrasenia)
         }
     )
     db.commit()
 
-    # Devolver el usuario creado
     nuevo = db.execute(
         text("SELECT * FROM usuarios WHERE email = :email"),
         {"email": usuario.email}

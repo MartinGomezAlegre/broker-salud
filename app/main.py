@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from app.routers import usuarios
 from app.routers import planes
@@ -17,11 +18,24 @@ app = FastAPI(
     swagger_ui_parameters={"persistAuthorization": True}
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "https://celdoctor.com",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(usuarios.router)
 app.include_router(planes.router)
 app.include_router(auth.router)
 app.include_router(suscripciones.router)
 app.include_router(admin.router)
+
 @app.get("/health")
 def health_check():
     return {
