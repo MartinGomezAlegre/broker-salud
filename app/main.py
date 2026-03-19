@@ -15,7 +15,7 @@ app = FastAPI(
     title="Broker de Salud",
     description="Plataforma para contratar servicios de telemedicina",
     version="0.1.0",
-    swagger_ui_parameters={"persistAuthorization": True}
+    swagger_ui_parameters={"persistAuthorization": True},
     redirect_slashes=False
 )
 
