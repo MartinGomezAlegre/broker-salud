@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.database import get_db
 from app.auth import get_current_user
+from datetime import date, timedelta
 
 router = APIRouter(
     prefix="/admin",
@@ -88,3 +89,43 @@ def dashboard(
         "tasa_conversion": round((activos.total / total_usuarios.total * 100), 2) if total_usuarios.total > 0 else 0,
         "popularidad_planes": [{"plan": p.nombre, "suscriptores": p.suscriptores} for p in planes]
     }
+
+@router.get("/metricas-grafico")
+def metricas_grafico(
+    db: Session = Depends(get_db),
+    usuario_id: int = Depends(get_current_user)
+):
+    # Suscripciones agrupadas por día en los últimos 30 días
+    rows = db.execute(text("""
+        SELECT DATE(created_at) as fecha, COUNT(*) as nuevas
+        FROM suscripciones
+        WHERE created_at >= NOW() - INTERVAL '30 days'
+        GROUP BY DATE(created_at)
+        ORDER BY fecha ASC
+    """)).fetchall()
+
+    por_dia = {row.fecha: row.nuevas for row in rows}
+
+    # Total acumulado antes del período (para arrancar el acumulado correctamente)
+    total_previo = db.execute(text("""
+        SELECT COUNT(*) as total
+        FROM suscripciones
+        WHERE created_at < NOW() - INTERVAL '30 days'
+    """)).fetchone().total
+
+    resultado = []
+    acumulado = total_previo
+    hoy = date.today()
+    inicio = hoy - timedelta(days=29)
+
+    for i in range(30):
+        dia = inicio + timedelta(days=i)
+        nuevas = por_dia.get(dia, 0)
+        acumulado += nuevas
+        resultado.append({
+            "fecha": dia.isoformat(),
+            "nuevas": nuevas,
+            "total_acumulado": acumulado
+        })
+
+    return resultado
