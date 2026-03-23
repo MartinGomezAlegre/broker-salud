@@ -10,7 +10,7 @@ router = APIRouter(
     tags=["usuarios"]
 )
 
-@router.post("/", response_model=UsuarioRespuesta)
+@router.post("", response_model=UsuarioRespuesta)
 def crear_usuario(usuario: UsuarioCrear, db: Session = Depends(get_db)):
     existe = db.execute(
         text("SELECT id FROM usuarios WHERE email = :email"),
@@ -21,14 +21,15 @@ def crear_usuario(usuario: UsuarioCrear, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="El email ya está registrado")
 
     db.execute(
-        text("""INSERT INTO usuarios (nombre, apellido, email, telefono, fecha_nacimiento, password_hash)
-           VALUES (:nombre, :apellido, :email, :telefono, :fecha_nacimiento, :password_hash)"""),
+        text("""INSERT INTO usuarios (nombre, apellido, email, telefono, fecha_nacimiento, dni, password_hash)
+           VALUES (:nombre, :apellido, :email, :telefono, :fecha_nacimiento, :dni, :password_hash)"""),
         {
             "nombre": usuario.nombre,
             "apellido": usuario.apellido,
             "email": usuario.email,
             "telefono": usuario.telefono,
             "fecha_nacimiento": usuario.fecha_nacimiento,
+            "dni": usuario.dni,
             "password_hash": hashear_password(usuario.contrasenia)
         }
     )

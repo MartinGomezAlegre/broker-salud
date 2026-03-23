@@ -1,12 +1,15 @@
 from pydantic import BaseModel
 from typing import Optional
 
-class PlanRespuesta (BaseModel):
+class PlanRespuesta(BaseModel):
     id: int
     nombre: str
     descripcion: str
     precio_mensual: float
     max_beneficiarios: Optional[int] = None
+    activo: Optional[bool] = None
+    tipo: Optional[str] = None
+    badge: Optional[str] = None
 
     class Config:
-            from_attributes = True
+        from_attributes = True

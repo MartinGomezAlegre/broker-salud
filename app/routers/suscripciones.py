@@ -11,7 +11,7 @@ router = APIRouter(
     tags=["suscripciones"]
 )
 
-@router.post("/", response_model=SuscripcionRespuesta)
+@router.post("", response_model=SuscripcionRespuesta)
 def contratar_plan(
     datos: SuscripcionCrear,
     db: Session = Depends(get_db),

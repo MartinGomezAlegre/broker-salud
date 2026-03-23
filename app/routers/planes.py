@@ -10,7 +10,7 @@ router = APIRouter(
     tags=["planes"]
 )
 
-@router.get("/", response_model=List[PlanRespuesta])
+@router.get("", response_model=List[PlanRespuesta])
 def listar_planes(db: Session = Depends(get_db)):
     planes = db.execute(
         text("SELECT * FROM planes WHERE activo = true")
