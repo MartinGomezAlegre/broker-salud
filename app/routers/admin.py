@@ -3,11 +3,12 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from app.database import get_db
 from app.auth import get_current_user
 from datetime import date, timedelta
 import io
+import json
 import openpyxl
 
 router = APIRouter(
@@ -88,8 +89,41 @@ def dashboard(
             ORDER BY suscriptores DESC
         """)).fetchall()
 
+        pendientes_pago = db.execute(text("""
+            SELECT COUNT(*) as total FROM suscripciones WHERE estado = 'pendiente_pago'
+        """)).fetchone()
+
+        revenue_por_plan = db.execute(text("""
+            SELECT p.nombre, COUNT(s.id) as suscriptores,
+                   COALESCE(SUM(s.precio_pagado), 0) as revenue
+            FROM planes p
+            LEFT JOIN suscripciones s ON p.id = s.plan_id
+              AND s.estado IN ('activa', 'pendiente_pago')
+            GROUP BY p.nombre
+        """)).fetchall()
+
+        nuevos_registros_hoy = db.execute(text("""
+            SELECT COUNT(*) as total FROM usuarios
+            WHERE DATE(created_at) = CURRENT_DATE
+        """)).fetchone()
+
+        ultimas_suscripciones = db.execute(text("""
+            SELECT s.id,
+                   u.nombre || ' ' || u.apellido AS usuario_nombre,
+                   u.email AS usuario_email,
+                   p.nombre AS plan_nombre,
+                   s.estado, s.created_at
+            FROM suscripciones s
+            JOIN usuarios u ON u.id = s.usuario_id
+            JOIN planes p ON p.id = s.plan_id
+            ORDER BY s.created_at DESC LIMIT 5
+        """)).fetchall()
+
+        mrr_val = float(mrr.mrr)
+
         return {
-            "mrr": float(mrr.mrr),
+            "mrr": mrr_val,
+            "arr": round(mrr_val * 12, 2),
             "suscriptores_activos": activos.total,
             "nuevos_hoy": nuevos_hoy.total,
             "nuevas_suscripciones_semana": nuevas_semana.total,
@@ -99,7 +133,24 @@ def dashboard(
             "total_usuarios": total_usuarios.total,
             "usuarios_sin_convertir": sin_suscripcion.total,
             "tasa_conversion": round((activos.total / total_usuarios.total * 100), 2) if total_usuarios.total > 0 else 0,
-            "popularidad_planes": [{"plan": p.nombre, "suscriptores": p.suscriptores} for p in planes]
+            "pendientes_pago": pendientes_pago.total,
+            "nuevos_registros_hoy": nuevos_registros_hoy.total,
+            "popularidad_planes": [{"plan": p.nombre, "suscriptores": p.suscriptores} for p in planes],
+            "revenue_por_plan": [
+                {"plan": r.nombre, "suscriptores": r.suscriptores, "revenue": float(r.revenue)}
+                for r in revenue_por_plan
+            ],
+            "ultimas_suscripciones": [
+                {
+                    "id": r.id,
+                    "usuario_nombre": r.usuario_nombre,
+                    "usuario_email": r.usuario_email,
+                    "plan_nombre": r.plan_nombre,
+                    "estado": r.estado,
+                    "created_at": r.created_at.isoformat() if r.created_at else None,
+                }
+                for r in ultimas_suscripciones
+            ],
         }
     except HTTPException:
         raise
@@ -363,6 +414,190 @@ def actualizar_plan(
             "nombre": plan_actualizado.nombre,
             "precio_mensual": float(plan_actualizado.precio_mensual),
             "activo": plan_actualizado.activo,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── Alertas ──────────────────────────────────────────────────────────────────
+
+@router.get("/alertas")
+def obtener_alertas(
+    db: Session = Depends(get_db),
+    usuario_id: int = Depends(require_admin)
+):
+    try:
+        pendientes = db.execute(text("""
+            SELECT COUNT(*) as total FROM suscripciones WHERE estado = 'pendiente_pago'
+        """)).fetchone().total
+
+        sin_convertir = db.execute(text("""
+            SELECT COUNT(*) as total FROM usuarios
+            WHERE activo = true
+            AND created_at <= NOW() - INTERVAL '7 days'
+            AND id NOT IN (
+                SELECT usuario_id FROM suscripciones
+                WHERE estado IN ('activa', 'pendiente_pago')
+            )
+        """)).fetchone().total
+
+        exportar_mediquo = db.execute(text("""
+            SELECT COUNT(*) as total FROM suscripciones
+            WHERE DATE(created_at) = CURRENT_DATE
+        """)).fetchone().total
+
+        alertas = []
+        if pendientes > 0:
+            alertas.append({
+                "tipo": "pendientes_pago",
+                "cantidad": pendientes,
+                "mensaje": f"{pendientes} suscripciones pendientes de pago",
+            })
+        if sin_convertir > 0:
+            alertas.append({
+                "tipo": "sin_convertir",
+                "cantidad": sin_convertir,
+                "mensaje": f"{sin_convertir} usuarios sin suscripción hace más de 7 días",
+            })
+        if exportar_mediquo > 0:
+            alertas.append({
+                "tipo": "exportar_mediquo",
+                "cantidad": exportar_mediquo,
+                "mensaje": f"{exportar_mediquo} nuevos suscriptores para exportar a Mediquo hoy",
+            })
+
+        return alertas
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── Cambiar estado usuario ────────────────────────────────────────────────────
+
+class CambiarEstadoUsuario(BaseModel):
+    activo: bool
+    motivo: Optional[str] = None
+
+
+@router.put("/usuarios/{usuario_id}/estado")
+def cambiar_estado_usuario(
+    usuario_id: int,
+    datos: CambiarEstadoUsuario,
+    db: Session = Depends(get_db),
+    _admin_id: int = Depends(require_admin)
+):
+    try:
+        usuario = db.execute(
+            text("SELECT id, nombre, apellido, email, activo, rol FROM usuarios WHERE id = :id"),
+            {"id": usuario_id}
+        ).fetchone()
+
+        if not usuario:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+        estado_anterior = usuario.activo
+
+        db.execute(
+            text("UPDATE usuarios SET activo = :activo WHERE id = :id"),
+            {"activo": datos.activo, "id": usuario_id}
+        )
+
+        accion = "dar_de_alta" if datos.activo else "dar_de_baja"
+        db.execute(text("""
+            INSERT INTO auditoria (accion, tabla_afectada, registro_id, datos_anteriores, datos_nuevos)
+            VALUES (:accion, 'usuarios', :registro_id, :datos_anteriores, :datos_nuevos)
+        """), {
+            "accion": accion,
+            "registro_id": usuario_id,
+            "datos_anteriores": json.dumps({"activo": estado_anterior}),
+            "datos_nuevos": json.dumps({"activo": datos.activo, "motivo": datos.motivo}),
+        })
+
+        db.commit()
+
+        return {
+            "id": usuario.id,
+            "nombre": usuario.nombre,
+            "apellido": usuario.apellido,
+            "email": usuario.email,
+            "activo": datos.activo,
+            "rol": usuario.rol,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── Cambiar estado suscripción ────────────────────────────────────────────────
+
+ESTADOS_PERMITIDOS = {"activa", "cancelada", "pendiente_pago"}
+
+
+class CambiarEstadoSuscripcion(BaseModel):
+    estado: str
+    motivo: Optional[str] = None
+
+
+@router.put("/suscripciones/{suscripcion_id}/estado")
+def cambiar_estado_suscripcion(
+    suscripcion_id: int,
+    datos: CambiarEstadoSuscripcion,
+    db: Session = Depends(get_db),
+    _admin_id: int = Depends(require_admin)
+):
+    try:
+        if datos.estado not in ESTADOS_PERMITIDOS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Estado inválido. Permitidos: {', '.join(ESTADOS_PERMITIDOS)}"
+            )
+
+        row = db.execute(text("""
+            SELECT s.id, s.estado, s.precio_pagado, s.fecha_inicio,
+                   u.nombre || ' ' || u.apellido AS usuario_nombre,
+                   u.email AS usuario_email,
+                   p.nombre AS plan_nombre
+            FROM suscripciones s
+            JOIN usuarios u ON u.id = s.usuario_id
+            JOIN planes p ON p.id = s.plan_id
+            WHERE s.id = :id
+        """), {"id": suscripcion_id}).fetchone()
+
+        if not row:
+            raise HTTPException(status_code=404, detail="Suscripción no encontrada")
+
+        estado_anterior = row.estado
+
+        db.execute(
+            text("UPDATE suscripciones SET estado = :estado WHERE id = :id"),
+            {"estado": datos.estado, "id": suscripcion_id}
+        )
+
+        db.execute(text("""
+            INSERT INTO historial_suscripciones
+              (suscripcion_id, campo_modificado, valor_anterior, valor_nuevo, motivo)
+            VALUES (:suscripcion_id, 'estado', :valor_anterior, :valor_nuevo, :motivo)
+        """), {
+            "suscripcion_id": suscripcion_id,
+            "valor_anterior": estado_anterior,
+            "valor_nuevo": datos.estado,
+            "motivo": datos.motivo,
+        })
+
+        db.commit()
+
+        return {
+            "id": row.id,
+            "usuario_nombre": row.usuario_nombre,
+            "usuario_email": row.usuario_email,
+            "plan_nombre": row.plan_nombre,
+            "estado": datos.estado,
+            "precio_pagado": float(row.precio_pagado) if row.precio_pagado is not None else None,
+            "fecha_inicio": row.fecha_inicio.isoformat() if row.fecha_inicio else None,
         }
     except HTTPException:
         raise
