@@ -229,8 +229,8 @@ def listar_suscripciones(
         return [
             {
                 "id": r.id,
-                "usuario_nombre": r.usuario_nombre,
-                "usuario_email": r.usuario_email,
+                "nombre_completo": r.usuario_nombre,
+                "email": r.usuario_email,
                 "plan_nombre": r.plan_nombre,
                 "estado": r.estado,
                 "precio_pagado": float(r.precio_pagado) if r.precio_pagado is not None else None,
