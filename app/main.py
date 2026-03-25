@@ -6,6 +6,7 @@ from app.routers import planes
 from app.routers import auth
 from app.routers import suscripciones
 from app.routers import admin
+from app.routers import empresas
 from fastapi.security import HTTPBearer
 
 load_dotenv()
@@ -37,6 +38,7 @@ app.include_router(planes.router)
 app.include_router(auth.router)
 app.include_router(suscripciones.router)
 app.include_router(admin.router)
+app.include_router(empresas.router)
 
 @app.get("/health")
 def health_check():

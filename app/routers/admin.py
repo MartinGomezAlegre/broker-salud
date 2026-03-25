@@ -468,6 +468,30 @@ def obtener_alertas(
                 "mensaje": f"{exportar_mediquo} nuevos suscriptores para exportar a Mediquo hoy",
             })
 
+        empresas_vencimiento = db.execute(text("""
+            SELECT COUNT(*) as total FROM suscripciones_empresariales
+            WHERE estado NOT IN ('cancelada', 'vencida')
+            AND proximo_cobro BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days'
+        """)).fetchone().total
+
+        empresas_pendiente = db.execute(text("""
+            SELECT COUNT(*) as total FROM suscripciones_empresariales
+            WHERE estado = 'pendiente_pago'
+        """)).fetchone().total
+
+        if empresas_vencimiento > 0:
+            alertas.append({
+                "tipo": "empresas_vencimiento_7_dias",
+                "cantidad": empresas_vencimiento,
+                "mensaje": f"{empresas_vencimiento} empresas vencen en los próximos 7 días",
+            })
+        if empresas_pendiente > 0:
+            alertas.append({
+                "tipo": "empresas_pendiente_pago",
+                "cantidad": empresas_pendiente,
+                "mensaje": f"{empresas_pendiente} empresas con pago pendiente",
+            })
+
         return alertas
     except HTTPException:
         raise
