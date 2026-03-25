@@ -119,10 +119,30 @@ def dashboard(
             ORDER BY s.created_at DESC LIMIT 5
         """)).fetchall()
 
+        mrr_empresarial = db.execute(text("""
+            SELECT COALESCE(SUM(precio_total), 0) as mrr
+            FROM suscripciones_empresariales WHERE estado = 'activa'
+        """)).fetchone()
+
+        empresas_activas = db.execute(text("""
+            SELECT COUNT(*) as total FROM empresas WHERE activo = true
+        """)).fetchone()
+
+        empleados_activos = db.execute(text("""
+            SELECT COUNT(*) as total FROM empleados_empresa WHERE activo = true
+        """)).fetchone()
+
+        ultimas_actividades = db.execute(text("""
+            SELECT accion, tabla_afectada, created_at
+            FROM auditoria ORDER BY created_at DESC LIMIT 10
+        """)).fetchall()
+
         mrr_val = float(mrr.mrr)
 
         return {
             "mrr": mrr_val,
+            "mrr_personal": mrr_val,
+            "mrr_empresarial": float(mrr_empresarial.mrr),
             "arr": round(mrr_val * 12, 2),
             "suscriptores_activos": activos.total,
             "nuevos_hoy": nuevos_hoy.total,
@@ -134,7 +154,10 @@ def dashboard(
             "usuarios_sin_convertir": sin_suscripcion.total,
             "tasa_conversion": round((activos.total / total_usuarios.total * 100), 2) if total_usuarios.total > 0 else 0,
             "pendientes_pago": pendientes_pago.total,
+            "registros_hoy": nuevos_registros_hoy.total,
             "nuevos_registros_hoy": nuevos_registros_hoy.total,
+            "empresas_activas": empresas_activas.total,
+            "empleados_activos": empleados_activos.total,
             "popularidad_planes": [{"plan": p.nombre, "suscriptores": p.suscriptores} for p in planes],
             "revenue_por_plan": [
                 {"plan": r.nombre, "suscriptores": r.suscriptores, "revenue": float(r.revenue)}
@@ -150,6 +173,14 @@ def dashboard(
                     "created_at": r.created_at.isoformat() if r.created_at else None,
                 }
                 for r in ultimas_suscripciones
+            ],
+            "ultimas_actividades": [
+                {
+                    "accion": a.accion,
+                    "tabla_afectada": a.tabla_afectada,
+                    "created_at": a.created_at.isoformat() if a.created_at else None,
+                }
+                for a in ultimas_actividades
             ],
         }
     except HTTPException:
@@ -492,6 +523,19 @@ def obtener_alertas(
                 "mensaje": f"{empresas_pendiente} empresas con pago pendiente",
             })
 
+        vencidas_3dias = db.execute(text("""
+            SELECT COUNT(*) as total FROM suscripciones
+            WHERE estado = 'pendiente_pago'
+            AND created_at <= NOW() - INTERVAL '3 days'
+        """)).fetchone().total
+
+        if vencidas_3dias > 0:
+            alertas.append({
+                "tipo": "suscripciones_vencidas_3dias",
+                "cantidad": vencidas_3dias,
+                "mensaje": f"{vencidas_3dias} suscripciones pendientes hace más de 3 días",
+            })
+
         return alertas
     except HTTPException:
         raise
@@ -622,6 +666,177 @@ def cambiar_estado_suscripcion(
             "estado": datos.estado,
             "precio_pagado": float(row.precio_pagado) if row.precio_pagado is not None else None,
             "fecha_inicio": row.fecha_inicio.isoformat() if row.fecha_inicio else None,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── Métricas retención ────────────────────────────────────────────────────────
+
+@router.get("/metricas-retencion")
+def metricas_retencion(
+    db: Session = Depends(get_db),
+    _: int = Depends(require_admin)
+):
+    try:
+        rows = db.execute(text("""
+            SELECT
+                TO_CHAR(DATE_TRUNC('month', s.created_at), 'YYYY-MM') AS mes,
+                COUNT(*) AS nuevos,
+                COUNT(*) FILTER (WHERE s.estado = 'activa') AS activos_siguiente_mes
+            FROM suscripciones s
+            WHERE s.created_at >= DATE_TRUNC('month', NOW()) - INTERVAL '5 months'
+            GROUP BY DATE_TRUNC('month', s.created_at)
+            ORDER BY DATE_TRUNC('month', s.created_at) ASC
+        """)).fetchall()
+
+        resultado = []
+        for r in rows:
+            tasa = round((r.activos_siguiente_mes / r.nuevos * 100), 2) if r.nuevos > 0 else 0
+            resultado.append({
+                "mes": r.mes,
+                "nuevos": r.nuevos,
+                "activos_al_mes_siguiente": r.activos_siguiente_mes,
+                "tasa_retencion": tasa,
+            })
+        return resultado
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── Métricas embudo ───────────────────────────────────────────────────────────
+
+@router.get("/metricas-embudo")
+def metricas_embudo(
+    db: Session = Depends(get_db),
+    _: int = Depends(require_admin)
+):
+    try:
+        total_usuarios = db.execute(text(
+            "SELECT COUNT(*) as total FROM usuarios"
+        )).fetchone().total
+
+        iniciaron_checkout = db.execute(text("""
+            SELECT COUNT(DISTINCT usuario_id) as total FROM suscripciones
+        """)).fetchone().total
+
+        completaron_pago = db.execute(text("""
+            SELECT COUNT(*) as total FROM suscripciones WHERE estado = 'activa'
+        """)).fetchone().total
+
+        tasa_reg_checkout = round(iniciaron_checkout / total_usuarios * 100, 2) if total_usuarios > 0 else 0
+        tasa_checkout_pago = round(completaron_pago / iniciaron_checkout * 100, 2) if iniciaron_checkout > 0 else 0
+
+        return {
+            "visitantes_registrados": total_usuarios,
+            "iniciaron_checkout": iniciaron_checkout,
+            "completaron_pago": completaron_pago,
+            "tasa_registro_a_checkout": tasa_reg_checkout,
+            "tasa_checkout_a_pago": tasa_checkout_pago,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── Reporte mensual ───────────────────────────────────────────────────────────
+
+@router.get("/reporte-mensual")
+def reporte_mensual(
+    mes: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    _: int = Depends(require_admin)
+):
+    try:
+        from datetime import datetime
+        if mes:
+            try:
+                inicio_mes = datetime.strptime(mes, "%Y-%m").date().replace(day=1)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Formato de mes inválido. Usar: YYYY-MM")
+        else:
+            hoy = date.today()
+            inicio_mes = hoy.replace(day=1)
+
+        # Calcular inicio del mes anterior
+        if inicio_mes.month == 1:
+            inicio_mes_ant = inicio_mes.replace(year=inicio_mes.year - 1, month=12)
+        else:
+            inicio_mes_ant = inicio_mes.replace(month=inicio_mes.month - 1)
+
+        # Calcular fin del mes actual
+        if inicio_mes.month == 12:
+            fin_mes = inicio_mes.replace(year=inicio_mes.year + 1, month=1)
+        else:
+            fin_mes = inicio_mes.replace(month=inicio_mes.month + 1)
+
+        def _mrr(desde, hasta):
+            return float(db.execute(text("""
+                SELECT COALESCE(SUM(precio_pagado), 0) as mrr FROM suscripciones
+                WHERE estado = 'activa'
+                AND created_at >= :desde AND created_at < :hasta
+            """), {"desde": desde, "hasta": hasta}).fetchone().mrr)
+
+        def _count(tabla_campo, desde, hasta, extra=""):
+            return db.execute(text(f"""
+                SELECT COUNT(*) as total FROM {tabla_campo}
+                WHERE created_at >= :desde AND created_at < :hasta {extra}
+            """), {"desde": desde, "hasta": hasta}).fetchone().total
+
+        mrr_mes = _mrr(inicio_mes, fin_mes)
+        mrr_ant = _mrr(inicio_mes_ant, inicio_mes)
+        var_mrr = round((mrr_mes - mrr_ant) / mrr_ant * 100, 2) if mrr_ant > 0 else 0
+
+        nuevas = _count("suscripciones", inicio_mes, fin_mes)
+        nuevas_ant = _count("suscripciones", inicio_mes_ant, inicio_mes)
+        var_nuevas = round((nuevas - nuevas_ant) / nuevas_ant * 100, 2) if nuevas_ant > 0 else 0
+
+        canceladas = _count("suscripciones", inicio_mes, fin_mes, "AND estado = 'cancelada'")
+        canceladas_ant = _count("suscripciones", inicio_mes_ant, inicio_mes, "AND estado = 'cancelada'")
+        var_cancel = round((canceladas - canceladas_ant) / canceladas_ant * 100, 2) if canceladas_ant > 0 else 0
+
+        nuevos_usuarios = _count("usuarios", inicio_mes, fin_mes)
+
+        empresas_nuevas = db.execute(text("""
+            SELECT COUNT(*) as total FROM empresas
+            WHERE created_at >= :desde AND created_at < :hasta
+        """), {"desde": inicio_mes, "hasta": fin_mes}).fetchone().total
+
+        revenue_plan = db.execute(text("""
+            SELECT p.nombre, COALESCE(SUM(s.precio_pagado), 0) as revenue,
+                   COUNT(s.id) as suscriptores
+            FROM planes p
+            LEFT JOIN suscripciones s ON s.plan_id = p.id
+                AND s.created_at >= :desde AND s.created_at < :hasta
+            GROUP BY p.nombre
+            ORDER BY revenue DESC
+        """), {"desde": inicio_mes, "hasta": fin_mes}).fetchall()
+
+        top_plan = revenue_plan[0].nombre if revenue_plan and revenue_plan[0].revenue > 0 else None
+
+        return {
+            "mes": inicio_mes.strftime("%Y-%m"),
+            "mrr": mrr_mes,
+            "mrr_mes_anterior": mrr_ant,
+            "variacion_mrr": var_mrr,
+            "nuevas_suscripciones": nuevas,
+            "nuevas_mes_anterior": nuevas_ant,
+            "variacion_nuevas": var_nuevas,
+            "cancelaciones": canceladas,
+            "cancelaciones_mes_anterior": canceladas_ant,
+            "variacion_cancelaciones": var_cancel,
+            "nuevos_usuarios": nuevos_usuarios,
+            "empresas_nuevas": empresas_nuevas,
+            "revenue_por_plan": [
+                {"plan": r.nombre, "revenue": float(r.revenue), "suscriptores": r.suscriptores}
+                for r in revenue_plan
+            ],
+            "top_plan": top_plan,
         }
     except HTTPException:
         raise

@@ -119,29 +119,37 @@ def _registrar_auditoria(db: Session, accion: str, tabla: str, registro_id: int,
 @router.get("")
 def listar_empresas(
     activo: Optional[bool] = Query(None),
+    buscar: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     _: int = Depends(require_admin)
 ):
     try:
-        filtro = ""
-        params = {}
+        condiciones = []
+        params: dict = {}
         if activo is not None:
-            filtro = "WHERE e.activo = :activo"
+            condiciones.append("e.activo = :activo")
             params["activo"] = activo
+        if buscar:
+            condiciones.append("(e.razon_social ILIKE :q OR e.cuit ILIKE :q OR e.email_contacto ILIKE :q)")
+            params["q"] = f"%{buscar}%"
+        where = ("WHERE " + " AND ".join(condiciones)) if condiciones else ""
 
         rows = db.execute(text(f"""
             SELECT e.id, e.razon_social, e.cuit, e.nombre_comercial, e.rubro,
                    e.email_contacto, e.contacto_nombre, e.activo, e.created_at,
                    COUNT(em.id) FILTER (WHERE em.activo = true) AS cantidad_empleados_activos,
-                   se.estado AS estado_suscripcion
+                   se.estado AS estado_suscripcion,
+                   p.nombre AS plan_nombre,
+                   se.proximo_cobro
             FROM empresas e
             LEFT JOIN empleados_empresa em ON em.empresa_id = e.id
             LEFT JOIN suscripciones_empresariales se
                    ON se.empresa_id = e.id AND se.estado NOT IN ('cancelada', 'vencida')
-            {filtro}
+            LEFT JOIN planes p ON p.id = se.plan_id
+            {where}
             GROUP BY e.id, e.razon_social, e.cuit, e.nombre_comercial, e.rubro,
                      e.email_contacto, e.contacto_nombre, e.activo, e.created_at,
-                     se.estado
+                     se.estado, p.nombre, se.proximo_cobro
             ORDER BY e.created_at DESC
         """), params).fetchall()
 
@@ -158,6 +166,8 @@ def listar_empresas(
                 "created_at": r.created_at.isoformat() if r.created_at else None,
                 "cantidad_empleados_activos": r.cantidad_empleados_activos or 0,
                 "estado_suscripcion": r.estado_suscripcion,
+                "plan_nombre": r.plan_nombre,
+                "proximo_cobro": r.proximo_cobro.isoformat() if r.proximo_cobro else None,
             }
             for r in rows
         ]
@@ -422,7 +432,7 @@ def crear_suscripcion_empresarial(
             VALUES
               (:empresa_id, :plan_id, :cantidad_empleados, :precio_por_empleado,
                :precio_total, :periodicidad, :fecha_inicio, :fecha_fin,
-               :proximo_cobro, 'pendiente_pago')
+               :proximo_cobro, 'activa')
             RETURNING id
         """), {
             "empresa_id": empresa_id,
@@ -824,20 +834,18 @@ def eliminar_empleado(
 ):
     try:
         empleado = db.execute(
-            text("""SELECT id, activo, usuario_id FROM empleados_empresa
+            text("""SELECT id, activo, fecha_alta FROM empleados_empresa
                     WHERE id = :id AND empresa_id = :empresa_id"""),
             {"id": empleado_id, "empresa_id": empresa_id}
         ).fetchone()
         if not empleado:
             raise HTTPException(status_code=404, detail="Empleado no encontrado")
 
-        if empleado.usuario_id is not None:
-            db.execute(text("""
-                UPDATE empleados_empresa SET activo = false, fecha_baja = CURRENT_DATE
-                WHERE id = :id
-            """), {"id": empleado_id})
-            db.commit()
-            return {"mensaje": "El empleado tiene acceso registrado, fue dado de baja en lugar de eliminado"}
+        if empleado.fecha_alta != date.today():
+            raise HTTPException(
+                status_code=400,
+                detail="No se puede eliminar: usar dar de baja en su lugar"
+            )
 
         db.execute(
             text("DELETE FROM empleados_empresa WHERE id = :id"),
