@@ -27,7 +27,7 @@ def require_admin(db: Session = Depends(get_db), usuario_id: int = Depends(get_c
     return usuario_id
 
 
-# ─── Dashboard ────────────────────────────────────────────────────────────────
+# ══ DASHBOARD Y MÉTRICAS ══
 
 @router.get("/dashboard")
 def dashboard(
@@ -234,7 +234,7 @@ def metricas_grafico(
         return []
 
 
-# ─── Usuarios ─────────────────────────────────────────────────────────────────
+# ══ GESTIÓN DE USUARIOS ══
 
 @router.get("/usuarios")
 def listar_usuarios(
@@ -280,7 +280,7 @@ def listar_usuarios(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ─── Suscripciones ────────────────────────────────────────────────────────────
+# ══ GESTIÓN DE SUSCRIPCIONES ══
 
 @router.get("/suscripciones")
 def listar_suscripciones(
@@ -327,7 +327,7 @@ def listar_suscripciones(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ─── Exportar Excel ───────────────────────────────────────────────────────────
+# Movido a /admin/facturacion/exportar-mediquo
 
 @router.get("/exportar-excel")
 def exportar_excel(
@@ -452,7 +452,7 @@ def actualizar_plan(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ─── Alertas ──────────────────────────────────────────────────────────────────
+# ══ ALERTAS ══
 
 @router.get("/alertas")
 def obtener_alertas(
@@ -673,7 +673,7 @@ def cambiar_estado_suscripcion(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ─── Métricas retención ────────────────────────────────────────────────────────
+# ══ REPORTES ══
 
 @router.get("/metricas-retencion")
 def metricas_retencion(

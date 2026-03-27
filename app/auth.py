@@ -37,14 +37,29 @@ def verificar_token(token: str) -> int:
 
 from fastapi import Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+from app.database import get_db
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
-def get_current_user(token: str = Depends(oauth2_scheme)):
+def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+):
     usuario_id = verificar_token(token)
     if usuario_id is None:
         raise HTTPException(
             status_code=401,
             detail="Token inválido o expirado"
+        )
+    usuario = db.execute(
+        text("SELECT activo FROM usuarios WHERE id = :id"),
+        {"id": usuario_id}
+    ).fetchone()
+    if not usuario or not usuario.activo:
+        raise HTTPException(
+            status_code=401,
+            detail="Cuenta desactivada"
         )
     return usuario_id

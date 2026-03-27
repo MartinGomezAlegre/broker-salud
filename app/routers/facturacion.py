@@ -3,12 +3,14 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from app.database import get_db
 from app.routers.admin import require_admin
-from datetime import date
+from datetime import date, datetime
 import io
+import json
 import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment
 
 router = APIRouter(
     prefix="/admin/facturacion",
@@ -56,7 +58,8 @@ def listar_pagos(
 
         rows = db.execute(text(f"""
             SELECT p.id,
-                   u.nombre || ' ' || u.apellido AS nombre_completo,
+                   u.nombre || ' ' || u.apellido AS usuario_nombre,
+                   u.email AS usuario_email,
                    p.monto, p.moneda, p.pasarela, p.estado, p.tipo,
                    p.fecha_aprobacion, p.created_at
             FROM pagos p
@@ -68,12 +71,14 @@ def listar_pagos(
         return [
             {
                 "id": r.id,
-                "nombre_completo": r.nombre_completo,
+                "usuario_nombre": r.usuario_nombre,
+                "usuario_email": r.usuario_email,
                 "monto": float(r.monto) if r.monto is not None else None,
                 "moneda": r.moneda,
                 "pasarela": r.pasarela,
                 "estado": r.estado,
                 "tipo": r.tipo,
+                "fecha": r.fecha_aprobacion.isoformat() if r.fecha_aprobacion else r.created_at.isoformat(),
                 "fecha_aprobacion": r.fecha_aprobacion.isoformat() if r.fecha_aprobacion else None,
                 "created_at": r.created_at.isoformat() if r.created_at else None,
             }
@@ -125,11 +130,11 @@ def resumen_facturacion(
         """)).fetchall()
 
         return {
-            "total_recaudado_mes": total_actual,
-            "total_recaudado_mes_anterior": total_ant,
-            "variacion": variacion,
-            "pagos_aprobados_mes": mes_actual.aprobados,
-            "pagos_rechazados_mes": mes_actual.rechazados,
+            "total_mes": total_actual,
+            "total_mes_anterior": total_ant,
+            "variacion_porcentual": variacion,
+            "pagos_aprobados": mes_actual.aprobados,
+            "pagos_rechazados": mes_actual.rechazados,
             "por_pasarela": [
                 {"pasarela": r.pasarela, "total": float(r.total), "cantidad": r.cantidad}
                 for r in por_pasarela
@@ -269,45 +274,107 @@ def exportar_mediquo(
             JOIN usuarios u ON u.id = s.usuario_id
             JOIN planes p ON p.id = s.plan_id
             WHERE DATE(s.created_at) = CURRENT_DATE
+              AND s.estado = 'pendiente_pago'
             ORDER BY s.created_at DESC
         """)).fetchall()
 
-        if not rows:
-            rows = db.execute(text("""
-                SELECT u.nombre, u.apellido, u.email, u.telefono, u.dni,
-                       u.fecha_nacimiento, p.nombre AS plan_nombre,
-                       s.estado, s.fecha_inicio
-                FROM suscripciones s
-                JOIN usuarios u ON u.id = s.usuario_id
-                JOIN planes p ON p.id = s.plan_id
-                ORDER BY s.created_at DESC
-            """)).fetchall()
+        fecha_hoy = date.today().isoformat()
+        ahora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "Suscriptores"
-        ws.append(["Nombre", "Apellido", "Email", "Teléfono", "DNI",
-                   "Fecha Nacimiento", "Plan", "Estado", "Fecha Suscripción"])
 
-        for r in rows:
-            ws.append([
-                r.nombre, r.apellido, r.email, r.telefono,
-                r.dni if r.dni is not None else "",
-                r.fecha_nacimiento.isoformat() if r.fecha_nacimiento else "",
-                r.plan_nombre, r.estado,
-                r.fecha_inicio.isoformat() if r.fecha_inicio else "",
-            ])
+        # Fila 1: título
+        ws.merge_cells("A1:I1")
+        celda_titulo = ws["A1"]
+        celda_titulo.value = f"Reporte CelDoctor para Mediquo — {fecha_hoy}"
+        celda_titulo.font = Font(bold=True, color="FFFFFF", size=13)
+        celda_titulo.fill = PatternFill(start_color="4C1D95", end_color="4C1D95", fill_type="solid")
+        celda_titulo.alignment = Alignment(horizontal="center", vertical="center")
+
+        # Fila 2: metadata
+        ws.merge_cells("A2:I2")
+        celda_meta = ws["A2"]
+        celda_meta.value = f"Generado: {ahora} | Total: {len(rows)} registros"
+        celda_meta.fill = PatternFill(start_color="E8E8E8", end_color="E8E8E8", fill_type="solid")
+        celda_meta.font = Font(italic=True)
+
+        # Fila 3: headers
+        headers = ["Nombre", "Apellido", "Email", "Teléfono", "DNI",
+                   "Fecha Nacimiento", "Plan", "Estado", "Fecha Suscripción"]
+        header_fill = PatternFill(start_color="E8E8E8", end_color="E8E8E8", fill_type="solid")
+        header_font = Font(bold=True)
+        for col_idx, header in enumerate(headers, 1):
+            celda = ws.cell(row=3, column=col_idx, value=header)
+            celda.fill = header_fill
+            celda.font = header_font
+
+        # Fila 4+: datos
+        if rows:
+            for r in rows:
+                ws.append([
+                    r.nombre, r.apellido, r.email, r.telefono,
+                    r.dni if r.dni is not None else "",
+                    r.fecha_nacimiento.isoformat() if r.fecha_nacimiento else "",
+                    r.plan_nombre, r.estado,
+                    r.fecha_inicio.isoformat() if r.fecha_inicio else "",
+                ])
+        else:
+            ws.merge_cells("A4:I4")
+            ws["A4"].value = "Sin nuevos suscriptores hoy"
+
+        # Autoajustar ancho de columnas
+        for col in ws.columns:
+            max_length = 0
+            col_letter = col[0].column_letter
+            for cell in col:
+                if cell.value:
+                    max_length = max(max_length, len(str(cell.value)))
+            ws.column_dimensions[col_letter].width = min(max_length + 3, 40)
 
         buffer = io.BytesIO()
         wb.save(buffer)
         buffer.seek(0)
 
-        fecha_hoy = date.today().isoformat()
+        filename = f"mediquo_{fecha_hoy}_{len(rows)}_registros.xlsx"
         return Response(
             content=buffer.read(),
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": f"attachment; filename=suscriptores_{fecha_hoy}.xlsx"}
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
         )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── Marcar exportados ────────────────────────────────────────────────────────
+
+class MarcarExportados(BaseModel):
+    suscripcion_ids: List[int]
+
+
+@router.post("/marcar-exportados")
+def marcar_exportados(
+    datos: MarcarExportados,
+    db: Session = Depends(get_db),
+    _: int = Depends(require_admin)
+):
+    try:
+        db.execute(text("""
+            INSERT INTO auditoria (accion, tabla_afectada, datos_nuevos)
+            VALUES (:accion, :tabla, :datos)
+        """), {
+            "accion": "exportado_a_mediquo",
+            "tabla": "suscripciones",
+            "datos": json.dumps({
+                "suscripcion_ids": datos.suscripcion_ids,
+                "fecha": date.today().isoformat()
+            }),
+        })
+        db.commit()
+        return {"registrado": True, "cantidad": len(datos.suscripcion_ids)}
     except HTTPException:
         raise
     except Exception as e:

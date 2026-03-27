@@ -272,7 +272,7 @@ def listar_cupones(
                 "usos_actuales": r.usos_actuales,
                 "valido_desde": r.valido_desde.isoformat() if r.valido_desde else None,
                 "valido_hasta": r.valido_hasta.isoformat() if r.valido_hasta else None,
-                "solo_nuevos_usuarios": r.solo_nuevos_usuarios,
+                "solo_nuevos": r.solo_nuevos_usuarios,
                 "activo": r.activo,
                 "created_at": r.created_at.isoformat() if r.created_at else None,
             }

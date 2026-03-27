@@ -87,13 +87,21 @@ class CambiarEstadoEmpleado(BaseModel):
 
 
 class BulkEmpleados(BaseModel):
-    empleados: List[EmpleadoCrear]
+    datos: Optional[str] = None
+    empleados: Optional[List[EmpleadoCrear]] = None
 
 
 ESTADOS_SUSCRIPCION_EMPRESA = {"activa", "pendiente_pago", "cancelada", "vencida"}
 
 
 # ─── helpers ──────────────────────────────────────────────────────────────────
+
+def _empresa_to_dict(row) -> dict:
+    d = {k: (v.isoformat() if hasattr(v, "isoformat") else v)
+         for k, v in row._mapping.items()}
+    if "email_contacto" in d:
+        d["contacto_email"] = d.pop("email_contacto")
+    return d
 
 def _calcular_fecha_fin(fecha_inicio: date, periodicidad: str) -> date:
     dias = {"mensual": 30, "trimestral": 90, "anual": 365}
@@ -114,7 +122,9 @@ def _registrar_auditoria(db: Session, accion: str, tabla: str, registro_id: int,
     })
 
 
-# ─── Listado de empresas ───────────────────────────────────────────────────────
+# ══════════════════════════════════════════
+# SECCIÓN: GESTIÓN DE EMPRESAS
+# ══════════════════════════════════════════
 
 @router.get("")
 def listar_empresas(
@@ -160,7 +170,7 @@ def listar_empresas(
                 "cuit": r.cuit,
                 "nombre_comercial": r.nombre_comercial,
                 "rubro": r.rubro,
-                "email_contacto": r.email_contacto,
+                "contacto_email": r.email_contacto,
                 "contacto_nombre": r.contacto_nombre,
                 "activo": r.activo,
                 "created_at": r.created_at.isoformat() if r.created_at else None,
@@ -221,8 +231,7 @@ def crear_empresa(
             {"id": result.id}
         ).fetchone()
 
-        return {k: (v.isoformat() if hasattr(v, "isoformat") else v)
-                for k, v in empresa._mapping.items()}
+        return _empresa_to_dict(empresa)
     except HTTPException:
         raise
     except Exception as e:
@@ -272,8 +281,7 @@ def detalle_empresa(
             proximo_vencimiento = suscripcion.fecha_fin.isoformat()
 
         return {
-            "empresa": {k: (v.isoformat() if hasattr(v, "isoformat") else v)
-                        for k, v in empresa._mapping.items()},
+            "empresa": _empresa_to_dict(empresa),
             "suscripcion": {k: (v.isoformat() if hasattr(v, "isoformat") else v)
                             for k, v in suscripcion._mapping.items()} if suscripcion else None,
             "empleados": [
@@ -335,8 +343,7 @@ def actualizar_empresa(
             {"id": empresa_id}
         ).fetchone()
 
-        return {k: (v.isoformat() if hasattr(v, "isoformat") else v)
-                for k, v in actualizada._mapping.items()}
+        return _empresa_to_dict(actualizada)
     except HTTPException:
         raise
     except Exception as e:
@@ -392,15 +399,16 @@ def cambiar_estado_empresa(
             text("SELECT * FROM empresas WHERE id = :id"),
             {"id": empresa_id}
         ).fetchone()
-        return {k: (v.isoformat() if hasattr(v, "isoformat") else v)
-                for k, v in actualizada._mapping.items()}
+        return _empresa_to_dict(actualizada)
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ─── Crear suscripción empresarial ─────────────────────────────────────────────
+# ══════════════════════════════════════════
+# SECCIÓN: SUSCRIPCIONES EMPRESARIALES
+# ══════════════════════════════════════════
 
 @router.post("/{empresa_id}/suscripcion")
 def crear_suscripcion_empresarial(
@@ -569,7 +577,9 @@ def ver_suscripcion_empresarial(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ─── Listar empleados ──────────────────────────────────────────────────────────
+# ══════════════════════════════════════════
+# SECCIÓN: GESTIÓN DE EMPLEADOS
+# ══════════════════════════════════════════
 
 @router.get("/{empresa_id}/empleados")
 def listar_empleados(
@@ -692,23 +702,47 @@ def agregar_empleados_bulk(
         if not empresa:
             raise HTTPException(status_code=404, detail="Empresa no encontrada")
 
-        if len(datos.empleados) > 500:
+        # Determinar lista de empleados según formato recibido
+        empleados_lista: List[EmpleadoCrear] = []
+
+        if datos.datos:
+            # Formato CSV texto: "Nombre,Apellido,DNI,Email,Cargo" por línea
+            for linea in datos.datos.strip().splitlines():
+                linea = linea.strip()
+                if not linea:
+                    continue
+                partes = [p.strip() for p in linea.split(",")]
+                if len(partes) < 4:
+                    continue
+                empleados_lista.append(EmpleadoCrear(
+                    nombre=partes[0],
+                    apellido=partes[1],
+                    dni=partes[2],
+                    email=partes[3],
+                    cargo=partes[4] if len(partes) > 4 else None,
+                ))
+        elif datos.empleados:
+            empleados_lista = datos.empleados
+        else:
+            raise HTTPException(status_code=400, detail="Debe enviar 'datos' (CSV) o 'empleados' (JSON)")
+
+        if len(empleados_lista) > 500:
             raise HTTPException(status_code=400, detail="Máximo 500 empleados por request")
 
-        exitosos = 0
+        cargados = 0
         errores = []
 
-        for emp in datos.empleados:
+        for emp in empleados_lista:
             try:
                 _crear_empleado(empresa_id, emp, db)
-                exitosos += 1
+                cargados += 1
             except HTTPException as e:
-                errores.append({"email": emp.email, "motivo": e.detail})
+                errores.append(f"{emp.email}: {e.detail}")
             except Exception as e:
-                errores.append({"email": emp.email, "motivo": str(e)})
+                errores.append(f"{emp.email}: {str(e)}")
 
         db.commit()
-        return {"exitosos": exitosos, "fallidos": len(errores), "errores": errores}
+        return {"cargados": cargados, "fallidos": len(errores), "errores": errores}
     except HTTPException:
         raise
     except Exception as e:
@@ -859,7 +893,9 @@ def eliminar_empleado(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ─── Exportar empleados ────────────────────────────────────────────────────────
+# ══════════════════════════════════════════
+# SECCIÓN: EXPORTACIONES
+# ══════════════════════════════════════════
 
 @router.get("/{empresa_id}/exportar-empleados")
 def exportar_empleados(

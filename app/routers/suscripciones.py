@@ -26,16 +26,16 @@ def contratar_plan(
     if not plan:
         raise HTTPException(status_code=404, detail="Plan no encontrado o inactivo")
 
-    # 2. Verificar que no tiene suscripción activa
+    # 2. Verificar que no tiene suscripción activa o pendiente de pago
     suscripcion_existente = db.execute(
-        text("""SELECT id FROM suscripciones 
-                WHERE usuario_id = :usuario_id 
-                AND estado = 'activa'"""),
+        text("""SELECT id FROM suscripciones
+                WHERE usuario_id = :usuario_id
+                AND estado IN ('activa', 'pendiente_pago')"""),
         {"usuario_id": usuario_id}
     ).fetchone()
 
     if suscripcion_existente:
-        raise HTTPException(status_code=400, detail="Ya tenés una suscripción activa")
+        raise HTTPException(status_code=400, detail="Ya tenés una suscripción activa o pendiente de pago")
 
     # 3. Crear la suscripción
     resultado = db.execute(
@@ -54,20 +54,40 @@ def contratar_plan(
     db.commit()
     return resultado
 
-@router.get("/mia", response_model=SuscripcionRespuesta)
+@router.get("/mia")
 def mi_suscripcion(
     db: Session = Depends(get_db),
     usuario_id: int = Depends(get_current_user)
 ):
     suscripcion = db.execute(
-        text("""SELECT * FROM suscripciones 
-                WHERE usuario_id = :usuario_id 
-                AND estado != 'cancelada'
-                ORDER BY created_at DESC LIMIT 1"""),
+        text("""SELECT s.*, p.nombre AS nombre_plan,
+                       p.descripcion AS descripcion_plan
+                FROM suscripciones s
+                JOIN planes p ON p.id = s.plan_id
+                WHERE s.usuario_id = :usuario_id
+                  AND s.estado != 'cancelada'
+                ORDER BY s.created_at DESC LIMIT 1"""),
         {"usuario_id": usuario_id}
     ).fetchone()
 
     if not suscripcion:
         raise HTTPException(status_code=404, detail="No tenés suscripciones activas")
 
-    return suscripcion
+    # Verificar si fue exportada a Mediquo
+    exportado = db.execute(
+        text("""SELECT COUNT(*) as cnt FROM auditoria
+                WHERE accion = 'exportado_a_mediquo'
+                  AND datos_nuevos::text LIKE '%' || :sid || '%'"""),
+        {"sid": str(suscripcion.id)}
+    ).fetchone()
+
+    return {
+        "id": suscripcion.id,
+        "plan_id": suscripcion.plan_id,
+        "estado": suscripcion.estado,
+        "fecha_inicio": suscripcion.fecha_inicio.isoformat() if suscripcion.fecha_inicio else None,
+        "precio_pagado": float(suscripcion.precio_pagado) if suscripcion.precio_pagado is not None else None,
+        "nombre_plan": suscripcion.nombre_plan,
+        "descripcion_plan": suscripcion.descripcion_plan,
+        "fue_exportado": exportado.cnt > 0,
+    }
