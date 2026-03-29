@@ -1,3 +1,4 @@
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
@@ -11,6 +12,8 @@ import io
 import json
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/admin/facturacion",
@@ -87,7 +90,8 @@ def listar_pagos(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 # ─── Resumen facturación ───────────────────────────────────────────────────────
@@ -143,7 +147,8 @@ def resumen_facturacion(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 # ─── Facturas ─────────────────────────────────────────────────────────────────
@@ -191,7 +196,8 @@ def listar_facturas(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 # ─── Pago manual ──────────────────────────────────────────────────────────────
@@ -255,7 +261,8 @@ def pago_manual(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 # ─── Exportar Mediquo ──────────────────────────────────────────────────────────
@@ -346,7 +353,8 @@ def exportar_mediquo(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 # ─── Marcar exportados ────────────────────────────────────────────────────────
@@ -378,7 +386,8 @@ def marcar_exportados(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 # ─── Historial exportaciones ───────────────────────────────────────────────────

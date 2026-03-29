@@ -1,3 +1,4 @@
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
@@ -10,6 +11,8 @@ from datetime import date, timedelta
 import io
 import json
 import openpyxl
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/admin",
@@ -186,7 +189,8 @@ def dashboard(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 # ─── Métricas gráfico ─────────────────────────────────────────────────────────
@@ -239,25 +243,29 @@ def metricas_grafico(
 @router.get("/usuarios")
 def listar_usuarios(
     buscar: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     usuario_id: int = Depends(require_admin)
 ):
     try:
+        params: dict = {"limit": limit, "offset": offset}
         if buscar:
+            params["q"] = f"%{buscar}%"
             rows = db.execute(text("""
                 SELECT id, nombre, apellido, email, telefono, dni,
                        fecha_nacimiento, rol, activo, created_at
                 FROM usuarios
                 WHERE nombre ILIKE :q OR apellido ILIKE :q OR email ILIKE :q
-                ORDER BY created_at DESC
-            """), {"q": f"%{buscar}%"}).fetchall()
+                ORDER BY created_at DESC LIMIT :limit OFFSET :offset
+            """), params).fetchall()
         else:
             rows = db.execute(text("""
                 SELECT id, nombre, apellido, email, telefono, dni,
                        fecha_nacimiento, rol, activo, created_at
                 FROM usuarios
-                ORDER BY created_at DESC
-            """)).fetchall()
+                ORDER BY created_at DESC LIMIT :limit OFFSET :offset
+            """), params).fetchall()
 
         return [
             {
@@ -277,7 +285,8 @@ def listar_usuarios(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 # ══ GESTIÓN DE SUSCRIPCIONES ══
@@ -285,12 +294,16 @@ def listar_usuarios(
 @router.get("/suscripciones")
 def listar_suscripciones(
     estado: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     usuario_id: int = Depends(require_admin)
 ):
     try:
         filtro = "AND s.estado = :estado" if estado else ""
-        params = {"estado": estado} if estado else {}
+        params: dict = {"limit": limit, "offset": offset}
+        if estado:
+            params["estado"] = estado
 
         rows = db.execute(text(f"""
             SELECT s.id,
@@ -305,7 +318,7 @@ def listar_suscripciones(
             JOIN usuarios u ON u.id = s.usuario_id
             JOIN planes p ON p.id = s.plan_id
             WHERE 1=1 {filtro}
-            ORDER BY s.created_at DESC
+            ORDER BY s.created_at DESC LIMIT :limit OFFSET :offset
         """), params).fetchall()
 
         return [
@@ -324,7 +337,8 @@ def listar_suscripciones(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 # Movido a /admin/facturacion/exportar-mediquo
@@ -391,7 +405,8 @@ def exportar_excel(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 # ─── Actualizar plan ──────────────────────────────────────────────────────────
@@ -449,7 +464,8 @@ def actualizar_plan(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 # ══ ALERTAS ══
@@ -536,11 +552,25 @@ def obtener_alertas(
                 "mensaje": f"{vencidas_3dias} suscripciones pendientes hace más de 3 días",
             })
 
+        vencen_semana = db.execute(text("""
+            SELECT COUNT(*) as total FROM suscripciones
+            WHERE estado = 'activa'
+              AND fecha_vencimiento BETWEEN CURRENT_DATE AND CURRENT_DATE + 7
+        """)).fetchone().total
+
+        if vencen_semana > 0:
+            alertas.append({
+                "tipo": "vencen_esta_semana",
+                "cantidad": vencen_semana,
+                "mensaje": f"{vencen_semana} suscripciones activas vencen en los próximos 7 días",
+            })
+
         return alertas
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 # ─── Cambiar estado usuario ────────────────────────────────────────────────────
@@ -597,12 +627,13 @@ def cambiar_estado_usuario(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 # ─── Cambiar estado suscripción ────────────────────────────────────────────────
 
-ESTADOS_PERMITIDOS = {"activa", "cancelada", "pendiente_pago"}
+ESTADOS_PERMITIDOS = {"activa", "cancelada", "pendiente_pago", "vencida"}
 
 
 class CambiarEstadoSuscripcion(BaseModel):
@@ -645,6 +676,22 @@ def cambiar_estado_suscripcion(
             {"estado": datos.estado, "id": suscripcion_id}
         )
 
+        if datos.estado == "activa" and estado_anterior != "activa":
+            try:
+                venc = db.execute(
+                    text("SELECT fecha_vencimiento FROM suscripciones WHERE id = :id"),
+                    {"id": suscripcion_id}
+                ).fetchone()
+                fecha_venc_str = venc.fecha_vencimiento.isoformat() if venc and venc.fecha_vencimiento else "—"
+                precio = float(row.precio_pagado) if row.precio_pagado is not None else 0.0
+                from app.services.email import enviar_email_suscripcion_activa
+                enviar_email_suscripcion_activa(
+                    row.usuario_email, row.usuario_nombre.split()[0],
+                    row.plan_nombre, fecha_venc_str, precio
+                )
+            except Exception as e:
+                logger.error("Error enviando email activacion suscripcion: %s", e)
+
         db.execute(text("""
             INSERT INTO historial_suscripciones
               (suscripcion_id, campo_modificado, valor_anterior, valor_nuevo, motivo)
@@ -670,7 +717,8 @@ def cambiar_estado_suscripcion(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 # ══ REPORTES ══
@@ -705,7 +753,8 @@ def metricas_retencion(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 # ─── Métricas embudo ───────────────────────────────────────────────────────────
@@ -741,7 +790,8 @@ def metricas_embudo(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 # ─── Reporte mensual ───────────────────────────────────────────────────────────
@@ -841,4 +891,88 @@ def reporte_mensual(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
+
+
+# ══ VENCIMIENTOS AUTOMÁTICOS ══
+
+@router.get("/procesar-vencimientos")
+def procesar_vencimientos(
+    db: Session = Depends(get_db),
+    _: int = Depends(require_admin)
+):
+    """Pasa a 'vencida' las suscripciones activas cuya fecha_vencimiento ya pasó."""
+    try:
+        vencidas = db.execute(text("""
+            SELECT s.id, u.email, u.nombre, p.nombre AS plan_nombre
+            FROM suscripciones s
+            JOIN usuarios u ON u.id = s.usuario_id
+            JOIN planes p ON p.id = s.plan_id
+            WHERE s.estado = 'activa'
+              AND s.fecha_vencimiento < CURRENT_DATE
+        """)).fetchall()
+
+        if not vencidas:
+            return {"procesadas": 0}
+
+        ids = [r.id for r in vencidas]
+        db.execute(
+            text("UPDATE suscripciones SET estado = 'vencida' WHERE id = ANY(:ids)"),
+            {"ids": ids}
+        )
+        db.commit()
+
+        from app.services.email import enviar_email_plan_vencido
+        for r in vencidas:
+            try:
+                enviar_email_plan_vencido(r.email, r.nombre, r.plan_nombre)
+            except Exception as e:
+                logger.error("Error enviando email vencido a %s: %s", r.email, e)
+
+        return {"procesadas": len(vencidas)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Error en procesar_vencimientos: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
+
+
+@router.get("/enviar-recordatorios")
+def enviar_recordatorios(
+    db: Session = Depends(get_db),
+    _: int = Depends(require_admin)
+):
+    """Envía email de aviso a suscriptores cuyo plan vence en los próximos 7 días."""
+    try:
+        proximas = db.execute(text("""
+            SELECT s.id, s.fecha_vencimiento,
+                   u.email, u.nombre,
+                   p.nombre AS plan_nombre
+            FROM suscripciones s
+            JOIN usuarios u ON u.id = s.usuario_id
+            JOIN planes p ON p.id = s.plan_id
+            WHERE s.estado = 'activa'
+              AND s.fecha_vencimiento BETWEEN CURRENT_DATE + 1
+                                          AND CURRENT_DATE + 7
+        """)).fetchall()
+
+        from app.services.email import enviar_email_vencimiento_proximo
+        enviados = 0
+        for r in proximas:
+            try:
+                dias = (r.fecha_vencimiento - date.today()).days
+                enviar_email_vencimiento_proximo(
+                    r.email, r.nombre, r.plan_nombre,
+                    dias, r.fecha_vencimiento.isoformat()
+                )
+                enviados += 1
+            except Exception as e:
+                logger.error("Error enviando recordatorio a %s: %s", r.email, e)
+
+        return {"enviados": enviados}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Error en enviar_recordatorios: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")

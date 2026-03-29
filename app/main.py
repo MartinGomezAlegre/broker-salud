@@ -9,7 +9,13 @@ from app.routers import admin
 from app.routers import empresas
 from app.routers import facturacion
 from app.routers import catalogo
+from app.routers import soporte
+from app.routers import leads
+from app.routers import beneficiarios
 from fastapi.security import HTTPBearer
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from app.limiter import limiter
 
 load_dotenv()
 
@@ -21,6 +27,8 @@ app = FastAPI(
     swagger_ui_parameters={"persistAuthorization": True},
     redirect_slashes=False
 )
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -43,6 +51,11 @@ app.include_router(admin.router)
 app.include_router(empresas.router)
 app.include_router(facturacion.router)
 app.include_router(catalogo.router)
+app.include_router(soporte.router)
+app.include_router(soporte.admin_router)
+app.include_router(leads.router)
+app.include_router(leads.admin_router)
+app.include_router(beneficiarios.router)
 
 @app.get("/health")
 def health_check():

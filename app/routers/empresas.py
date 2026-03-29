@@ -1,3 +1,4 @@
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
@@ -11,6 +12,8 @@ from datetime import date, timedelta
 import io
 import json
 import openpyxl
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/admin/empresas",
@@ -130,12 +133,14 @@ def _registrar_auditoria(db: Session, accion: str, tabla: str, registro_id: int,
 def listar_empresas(
     activo: Optional[bool] = Query(None),
     buscar: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     _: int = Depends(require_admin)
 ):
     try:
         condiciones = []
-        params: dict = {}
+        params: dict = {"limit": limit, "offset": offset}
         if activo is not None:
             condiciones.append("e.activo = :activo")
             params["activo"] = activo
@@ -160,7 +165,7 @@ def listar_empresas(
             GROUP BY e.id, e.razon_social, e.cuit, e.nombre_comercial, e.rubro,
                      e.email_contacto, e.contacto_nombre, e.activo, e.created_at,
                      se.estado, p.nombre, se.proximo_cobro
-            ORDER BY e.created_at DESC
+            ORDER BY e.created_at DESC LIMIT :limit OFFSET :offset
         """), params).fetchall()
 
         return [
@@ -184,7 +189,8 @@ def listar_empresas(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 # ─── Crear empresa ─────────────────────────────────────────────────────────────
@@ -235,7 +241,8 @@ def crear_empresa(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 # ─── Detalle empresa ───────────────────────────────────────────────────────────
@@ -305,7 +312,8 @@ def detalle_empresa(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 # ─── Actualizar empresa ────────────────────────────────────────────────────────
@@ -347,7 +355,8 @@ def actualizar_empresa(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 # ─── Cambiar estado empresa ────────────────────────────────────────────────────
@@ -403,7 +412,8 @@ def cambiar_estado_empresa(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 # ══════════════════════════════════════════
@@ -464,7 +474,8 @@ def crear_suscripcion_empresarial(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 # ─── Cambiar estado suscripción empresarial ────────────────────────────────────
@@ -528,7 +539,8 @@ def cambiar_estado_suscripcion_empresarial(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 # ─── Ver suscripción empresarial ───────────────────────────────────────────────
@@ -574,7 +586,8 @@ def ver_suscripcion_empresarial(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 # ══════════════════════════════════════════
@@ -616,7 +629,8 @@ def listar_empleados(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 # ─── Agregar empleado ──────────────────────────────────────────────────────────
@@ -682,7 +696,8 @@ def agregar_empleado(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 # ─── Bulk empleados ────────────────────────────────────────────────────────────
@@ -746,7 +761,8 @@ def agregar_empleados_bulk(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 # ─── Actualizar empleado ───────────────────────────────────────────────────────
@@ -798,7 +814,8 @@ def actualizar_empleado(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 # ─── Cambiar estado empleado ───────────────────────────────────────────────────
@@ -854,7 +871,8 @@ def cambiar_estado_empleado(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 # ─── Eliminar empleado ─────────────────────────────────────────────────────────
@@ -890,7 +908,8 @@ def eliminar_empleado(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 # ══════════════════════════════════════════
@@ -947,7 +966,8 @@ def exportar_empleados(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 # ─── Exportar todas las empresas ───────────────────────────────────────────────
@@ -1002,7 +1022,8 @@ def exportar_empresas(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 # ─── Métricas empresariales ────────────────────────────────────────────────────
@@ -1051,4 +1072,5 @@ def metricas_empresas(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")

@@ -1,19 +1,35 @@
-from fastapi import APIRouter, Depends
+import logging
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import text
+from typing import List, Optional
 from app.database import get_db
 from app.schemas.planes import PlanRespuesta
-from typing import List
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/planes",
     tags=["planes"]
 )
 
+
 @router.get("", response_model=List[PlanRespuesta])
-def listar_planes(db: Session = Depends(get_db)):
-    planes = db.execute(
-        text("SELECT * FROM planes WHERE activo = true")
-    ).fetchall()
+def listar_planes(
+    tipo: Optional[str] = Query(None, description="'personal' o 'empresa'"),
+    db: Session = Depends(get_db)
+):
+    if tipo == "personal":
+        planes = db.execute(
+            text("SELECT * FROM planes WHERE activo = true AND tipo IN ('personal', 'familiar')")
+        ).fetchall()
+    elif tipo == "empresa":
+        planes = db.execute(
+            text("SELECT * FROM planes WHERE activo = true AND tipo IN ('empresa', 'corporativo')")
+        ).fetchall()
+    else:
+        planes = db.execute(
+            text("SELECT * FROM planes WHERE activo = true")
+        ).fetchall()
 
     return planes

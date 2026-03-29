@@ -1,3 +1,4 @@
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -7,6 +8,8 @@ from app.database import get_db
 from app.routers.admin import require_admin
 from datetime import date
 import json
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/admin/catalogo",
@@ -127,7 +130,8 @@ def listar_planes_admin(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 @router.post("/planes")
@@ -166,7 +170,8 @@ def crear_plan(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 @router.put("/planes/{plan_id}")
@@ -213,7 +218,8 @@ def actualizar_plan_catalogo(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 @router.put("/planes/{plan_id}/orden")
@@ -239,7 +245,8 @@ def actualizar_orden_plan(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 # ─── Cupones ──────────────────────────────────────────────────────────────────
@@ -281,7 +288,8 @@ def listar_cupones(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 @router.post("/cupones")
@@ -326,7 +334,8 @@ def crear_cupon(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 @router.put("/cupones/{cupon_id}")
@@ -365,7 +374,8 @@ def actualizar_cupon(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 @router.put("/cupones/{cupon_id}/estado")
@@ -391,7 +401,8 @@ def cambiar_estado_cupon(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 @router.delete("/cupones/{cupon_id}")
@@ -420,7 +431,8 @@ def eliminar_cupon(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 @router.get("/cupones/{cupon_id}/usos")
@@ -463,4 +475,5 @@ def usos_cupon(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")

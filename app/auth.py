@@ -7,6 +7,11 @@ import os
 load_dotenv()
 
 SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    raise ValueError(
+        "SECRET_KEY no está configurada en las variables de entorno. "
+        "Generá una segura con: python -c \"import secrets; print(secrets.token_hex(32))\""
+    )
 ALGORITHM = "HS256"
 EXPIRACION_MINUTOS = 10080  # 7 días
 
