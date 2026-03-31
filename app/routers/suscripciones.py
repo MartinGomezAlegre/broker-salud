@@ -86,9 +86,17 @@ def mi_suscripcion(
             raise HTTPException(status_code=404, detail="No tenés suscripciones activas")
 
         exportado = db.execute(
-            text("""SELECT COUNT(*) as cnt FROM auditoria
-                    WHERE accion = 'exportado_a_mediquo'
-                      AND datos_nuevos::text LIKE '%' || :sid || '%'"""),
+            text("""
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM auditoria a
+                    JOIN LATERAL jsonb_array_elements_text(
+                        COALESCE(a.datos_nuevos::jsonb -> 'suscripcion_ids', '[]'::jsonb)
+                    ) AS ids(sid) ON true
+                    WHERE a.accion = 'exportado_a_mediquo'
+                      AND ids.sid = :sid
+                ) AS exportado
+            """),
             {"sid": str(suscripcion.id)}
         ).fetchone()
 
@@ -101,7 +109,7 @@ def mi_suscripcion(
             "precio_pagado": float(suscripcion.precio_pagado) if suscripcion.precio_pagado is not None else None,
             "nombre_plan": suscripcion.nombre_plan,
             "descripcion_plan": suscripcion.descripcion_plan,
-            "fue_exportado": exportado.cnt > 0,
+            "fue_exportado": bool(exportado.exportado),
         }
     except HTTPException:
         raise

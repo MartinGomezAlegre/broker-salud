@@ -16,6 +16,12 @@ router = APIRouter(
     tags=["catalogo"]
 )
 
+# Alias router: expone /admin/cupones como alias de /admin/catalogo/cupones
+cupones_alias_router = APIRouter(
+    prefix="/admin",
+    tags=["catalogo"]
+)
+
 
 # ─── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -477,3 +483,14 @@ def usos_cupon(
     except Exception as e:
         logger.error("Error interno: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Error interno del servidor.")
+
+
+# ─── Alias /admin/cupones → /admin/catalogo/cupones ──────────────────────────
+
+@cupones_alias_router.get("/cupones")
+def listar_cupones_alias(
+    db: Session = Depends(get_db),
+    _: int = Depends(require_admin)
+):
+    """Alias de /admin/catalogo/cupones para compatibilidad con el frontend."""
+    return listar_cupones(db=db, _=_)

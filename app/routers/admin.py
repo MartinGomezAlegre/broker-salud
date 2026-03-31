@@ -897,7 +897,7 @@ def reporte_mensual(
 
 # ══ VENCIMIENTOS AUTOMÁTICOS ══
 
-@router.get("/procesar-vencimientos")
+@router.post("/procesar-vencimientos")
 def procesar_vencimientos(
     db: Session = Depends(get_db),
     _: int = Depends(require_admin)
@@ -938,7 +938,7 @@ def procesar_vencimientos(
         raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
-@router.get("/enviar-recordatorios")
+@router.post("/enviar-recordatorios")
 def enviar_recordatorios(
     db: Session = Depends(get_db),
     _: int = Depends(require_admin)

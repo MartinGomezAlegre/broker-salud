@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 from app.database import get_db
 from app.routers.admin import require_admin
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import io
 import json
 import openpyxl
@@ -216,6 +216,18 @@ def pago_manual(
         if not plan:
             raise HTTPException(status_code=404, detail="Plan no encontrado o inactivo")
 
+        precio_esperado = float(plan.precio_mensual or 0)
+        if datos.monto < 0 or (precio_esperado > 0 and datos.monto <= 0):
+            raise HTTPException(status_code=400, detail="El monto del pago manual debe ser mayor a cero")
+        if precio_esperado > 0 and abs(datos.monto - precio_esperado) > 0.01:
+            logger.warning(
+                "Pago manual con monto distinto al precio del plan. usuario_id=%s plan_id=%s monto=%s precio_plan=%s",
+                datos.usuario_id,
+                datos.plan_id,
+                datos.monto,
+                precio_esperado,
+            )
+
         pago = db.execute(text("""
             INSERT INTO pagos (usuario_id, monto, pasarela, estado, tipo, fecha_aprobacion)
             VALUES (:usuario_id, :monto, 'manual', 'aprobado', :tipo, NOW())
@@ -232,23 +244,46 @@ def pago_manual(
             ORDER BY created_at DESC LIMIT 1
         """), {"uid": datos.usuario_id}).fetchone()
 
+        suscripcion_activa = db.execute(text("""
+            SELECT id FROM suscripciones
+            WHERE usuario_id = :uid AND estado = 'activa'
+            ORDER BY created_at DESC LIMIT 1
+        """), {"uid": datos.usuario_id}).fetchone()
+
+        fecha_vencimiento = date.today() + timedelta(days=30)
         suscripcion_id = None
         if suscripcion_pendiente:
             db.execute(
-                text("UPDATE suscripciones SET estado = 'activa' WHERE id = :id"),
-                {"id": suscripcion_pendiente.id}
+                text("""
+                    UPDATE suscripciones
+                    SET plan_id = :plan_id,
+                        estado = 'activa',
+                        fecha_inicio = CURRENT_DATE,
+                        fecha_vencimiento = :fv,
+                        precio_pagado = :precio
+                    WHERE id = :id
+                """),
+                {
+                    "id": suscripcion_pendiente.id,
+                    "plan_id": datos.plan_id,
+                    "fv": fecha_vencimiento,
+                    "precio": datos.monto,
+                }
             )
             suscripcion_id = suscripcion_pendiente.id
+        elif suscripcion_activa:
+            raise HTTPException(status_code=400, detail="El usuario ya tiene una suscripción activa")
         else:
             nueva = db.execute(text("""
                 INSERT INTO suscripciones
-                  (usuario_id, plan_id, estado, fecha_inicio, precio_pagado)
-                VALUES (:uid, :plan_id, 'activa', CURRENT_DATE, :precio)
+                  (usuario_id, plan_id, estado, fecha_inicio, fecha_vencimiento, precio_pagado)
+                VALUES (:uid, :plan_id, 'activa', CURRENT_DATE, :fv, :precio)
                 RETURNING id
             """), {
                 "uid": datos.usuario_id,
                 "plan_id": datos.plan_id,
                 "precio": datos.monto,
+                "fv": fecha_vencimiento,
             }).fetchone()
             suscripcion_id = nueva.id
 
@@ -274,7 +309,8 @@ def exportar_mediquo(
 ):
     try:
         rows = db.execute(text("""
-            SELECT u.nombre, u.apellido, u.email, u.telefono, u.dni,
+            SELECT s.id AS suscripcion_id,
+                   u.nombre, u.apellido, u.email, u.telefono, u.dni,
                    u.fecha_nacimiento, p.nombre AS plan_nombre,
                    s.estado, s.fecha_inicio
             FROM suscripciones s
@@ -345,10 +381,14 @@ def exportar_mediquo(
         buffer.seek(0)
 
         filename = f"mediquo_{fecha_hoy}_{len(rows)}_registros.xlsx"
+        subscription_ids = ",".join(str(r.suscripcion_id) for r in rows)
         return Response(
             content=buffer.read(),
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": f"attachment; filename={filename}"}
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}",
+                "X-Subscription-Ids": subscription_ids,
+            }
         )
     except HTTPException:
         raise
@@ -370,6 +410,9 @@ def marcar_exportados(
     _: int = Depends(require_admin)
 ):
     try:
+        if not datos.suscripcion_ids:
+            raise HTTPException(status_code=400, detail="No se enviaron suscripciones para marcar")
+
         db.execute(text("""
             INSERT INTO auditoria (accion, tabla_afectada, datos_nuevos)
             VALUES (:accion, :tabla, :datos)

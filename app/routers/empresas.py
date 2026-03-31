@@ -972,6 +972,16 @@ def exportar_empleados(
 
 # ─── Exportar todas las empresas ───────────────────────────────────────────────
 
+@router.get("/{empresa_id}/exportar-excel")
+def exportar_empleados_alias(
+    empresa_id: int,
+    db: Session = Depends(get_db),
+    _: int = Depends(require_admin)
+):
+    """Alias de /{empresa_id}/exportar-empleados para compatibilidad con el frontend."""
+    return exportar_empleados(empresa_id=empresa_id, db=db, _=_)
+
+
 @router.get("/exportar-empresas")
 def exportar_empresas(
     db: Session = Depends(get_db),

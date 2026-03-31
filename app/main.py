@@ -39,8 +39,8 @@ app.add_middleware(
         "https://celdoctor.com",
     ],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
 )
 
 app.include_router(usuarios.router)
@@ -51,6 +51,7 @@ app.include_router(admin.router)
 app.include_router(empresas.router)
 app.include_router(facturacion.router)
 app.include_router(catalogo.router)
+app.include_router(catalogo.cupones_alias_router)
 app.include_router(soporte.router)
 app.include_router(soporte.admin_router)
 app.include_router(leads.router)
