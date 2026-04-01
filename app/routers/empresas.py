@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-from pydantic import BaseModel
+from pydantic import AliasChoices, BaseModel, Field
 from typing import Optional, List
 from app.database import get_db
 from app.auth import get_current_user
@@ -31,8 +31,8 @@ class EmpresaCrear(BaseModel):
     direccion: Optional[str] = None
     localidad: Optional[str] = None
     provincia: Optional[str] = None
-    telefono: Optional[str] = None
-    email_contacto: str
+    telefono: Optional[str] = Field(default=None, validation_alias=AliasChoices("telefono", "contacto_telefono"))
+    email_contacto: str = Field(validation_alias=AliasChoices("email_contacto", "contacto_email"))
     contacto_nombre: str
     contacto_cargo: Optional[str] = None
 
@@ -45,8 +45,8 @@ class EmpresaActualizar(BaseModel):
     direccion: Optional[str] = None
     localidad: Optional[str] = None
     provincia: Optional[str] = None
-    telefono: Optional[str] = None
-    email_contacto: Optional[str] = None
+    telefono: Optional[str] = Field(default=None, validation_alias=AliasChoices("telefono", "contacto_telefono"))
+    email_contacto: Optional[str] = Field(default=None, validation_alias=AliasChoices("email_contacto", "contacto_email"))
     contacto_nombre: Optional[str] = None
     contacto_cargo: Optional[str] = None
 
@@ -151,11 +151,18 @@ def listar_empresas(
 
         rows = db.execute(text(f"""
             SELECT e.id, e.razon_social, e.cuit, e.nombre_comercial, e.rubro,
-                   e.email_contacto, e.contacto_nombre, e.activo, e.created_at,
-                   COUNT(em.id) FILTER (WHERE em.activo = true) AS cantidad_empleados_activos,
+                   e.email_contacto, e.contacto_nombre, e.contacto_cargo, e.telefono,
+                   e.activo, e.created_at,
+                   COUNT(em.id) FILTER (WHERE em.activo = true) AS empleados_activos,
+                   COUNT(em.id) AS cantidad_empleados,
                    se.estado AS estado_suscripcion,
+                   se.plan_id,
                    p.nombre AS plan_nombre,
-                   se.proximo_cobro
+                   se.precio_por_empleado,
+                   se.precio_total,
+                   se.periodicidad,
+                   se.fecha_inicio AS fecha_inicio_suscripcion,
+                   COALESCE(se.fecha_fin, se.proximo_cobro) AS fecha_vencimiento
             FROM empresas e
             LEFT JOIN empleados_empresa em ON em.empresa_id = e.id
             LEFT JOIN suscripciones_empresariales se
@@ -163,8 +170,10 @@ def listar_empresas(
             LEFT JOIN planes p ON p.id = se.plan_id
             {where}
             GROUP BY e.id, e.razon_social, e.cuit, e.nombre_comercial, e.rubro,
-                     e.email_contacto, e.contacto_nombre, e.activo, e.created_at,
-                     se.estado, p.nombre, se.proximo_cobro
+                     e.email_contacto, e.contacto_nombre, e.contacto_cargo, e.telefono,
+                     e.activo, e.created_at,
+                     se.estado, se.plan_id, p.nombre, se.precio_por_empleado, se.precio_total,
+                     se.periodicidad, se.fecha_inicio, se.fecha_fin, se.proximo_cobro
             ORDER BY e.created_at DESC LIMIT :limit OFFSET :offset
         """), params).fetchall()
 
@@ -177,12 +186,20 @@ def listar_empresas(
                 "rubro": r.rubro,
                 "contacto_email": r.email_contacto,
                 "contacto_nombre": r.contacto_nombre,
+                "contacto_cargo": r.contacto_cargo,
+                "contacto_telefono": r.telefono,
                 "activo": r.activo,
                 "created_at": r.created_at.isoformat() if r.created_at else None,
-                "cantidad_empleados_activos": r.cantidad_empleados_activos or 0,
+                "empleados_activos": r.empleados_activos or 0,
+                "cantidad_empleados": r.cantidad_empleados or 0,
                 "estado_suscripcion": r.estado_suscripcion,
+                "plan_id": r.plan_id,
                 "plan_nombre": r.plan_nombre,
-                "proximo_cobro": r.proximo_cobro.isoformat() if r.proximo_cobro else None,
+                "precio_por_empleado": float(r.precio_por_empleado) if r.precio_por_empleado is not None else None,
+                "precio_total": float(r.precio_total) if r.precio_total is not None else None,
+                "periodicidad": r.periodicidad,
+                "fecha_inicio_suscripcion": r.fecha_inicio_suscripcion.isoformat() if r.fecha_inicio_suscripcion else None,
+                "fecha_vencimiento": r.fecha_vencimiento.isoformat() if r.fecha_vencimiento else None,
             }
             for r in rows
         ]
@@ -287,7 +304,51 @@ def detalle_empresa(
         if suscripcion and suscripcion.fecha_fin:
             proximo_vencimiento = suscripcion.fecha_fin.isoformat()
 
+        auditoria = db.execute(text("""
+            SELECT accion, created_at
+            FROM auditoria
+            WHERE (tabla_afectada = 'empresas' AND registro_id = :id)
+               OR (tabla_afectada = 'empleados_empresa' AND registro_id IN (
+                    SELECT id FROM empleados_empresa WHERE empresa_id = :id
+               ))
+            ORDER BY created_at DESC
+            LIMIT 50
+        """), {"id": empresa_id}).fetchall()
+
+        empresa_payload = {
+            "id": empresa.id,
+            "razon_social": empresa.razon_social,
+            "nombre_comercial": empresa.nombre_comercial,
+            "cuit": empresa.cuit,
+            "rubro": empresa.rubro,
+            "contacto_nombre": empresa.contacto_nombre,
+            "contacto_cargo": empresa.contacto_cargo,
+            "contacto_email": empresa.email_contacto,
+            "contacto_telefono": empresa.telefono,
+            "activo": empresa.activo,
+            "created_at": empresa.created_at.isoformat() if empresa.created_at else None,
+            "plan_nombre": suscripcion.plan_nombre if suscripcion else None,
+            "plan_id": suscripcion.plan_id if suscripcion else None,
+            "cantidad_empleados": suscripcion.cantidad_empleados if suscripcion and suscripcion.cantidad_empleados is not None else len(empleados),
+            "precio_por_empleado": float(suscripcion.precio_por_empleado) if suscripcion and suscripcion.precio_por_empleado is not None else None,
+            "precio_total": float(suscripcion.precio_total) if suscripcion and suscripcion.precio_total is not None else None,
+            "periodicidad": suscripcion.periodicidad if suscripcion else None,
+            "estado_suscripcion": suscripcion.estado if suscripcion else None,
+            "fecha_inicio_suscripcion": suscripcion.fecha_inicio.isoformat() if suscripcion and suscripcion.fecha_inicio else None,
+            "fecha_vencimiento": suscripcion.fecha_fin.isoformat() if suscripcion and suscripcion.fecha_fin else proximo_vencimiento,
+            "empleados_activos": empleados_activos,
+            "empleados_total": len(empleados),
+            "auditoria": [
+                {
+                    "descripcion": a.accion.replace("_", " ").capitalize(),
+                    "fecha": a.created_at.isoformat() if a.created_at else None,
+                }
+                for a in auditoria
+            ],
+        }
+
         return {
+            **empresa_payload,
             "empresa": _empresa_to_dict(empresa),
             "suscripcion": {k: (v.isoformat() if hasattr(v, "isoformat") else v)
                             for k, v in suscripcion._mapping.items()} if suscripcion else None,

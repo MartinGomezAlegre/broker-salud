@@ -70,8 +70,8 @@ def crear_ticket(
 
         ticket = db.execute(
             text("""
-                INSERT INTO tickets_soporte (usuario_id, asunto, mensaje)
-                VALUES (:usuario_id, :asunto, :mensaje)
+                INSERT INTO tickets_soporte (usuario_id, asunto, mensaje, estado, prioridad, updated_at)
+                VALUES (:usuario_id, :asunto, :mensaje, 'abierto', 'normal', NOW())
                 RETURNING id, asunto, mensaje, estado, prioridad, created_at
             """),
             {"usuario_id": usuario_id, "asunto": datos.asunto.strip(), "mensaje": datos.mensaje.strip()}
@@ -112,7 +112,13 @@ def mis_tickets(
     try:
         tickets = db.execute(
             text("""
-                SELECT id, asunto, estado, prioridad, respuesta, created_at, respondido_en
+                SELECT id, asunto,
+                       CASE
+                           WHEN estado IS NULL OR estado = '' OR estado = 'nuevo' THEN 'abierto'
+                           ELSE estado
+                       END AS estado,
+                       COALESCE(prioridad, 'normal') AS prioridad,
+                       respuesta, created_at, respondido_en
                 FROM tickets_soporte
                 WHERE usuario_id = :usuario_id
                 ORDER BY created_at DESC
@@ -152,7 +158,10 @@ def listar_tickets_admin(
         filtros = []
         params: dict = {}
         if estado:
-            filtros.append("t.estado = :estado")
+            if estado == "abierto":
+                filtros.append("(t.estado = :estado OR t.estado = 'nuevo' OR t.estado IS NULL OR t.estado = '')")
+            else:
+                filtros.append("t.estado = :estado")
             params["estado"] = estado
         if prioridad:
             filtros.append("t.prioridad = :prioridad")
@@ -161,7 +170,13 @@ def listar_tickets_admin(
         where = ("WHERE " + " AND ".join(filtros)) if filtros else ""
 
         tickets = db.execute(text(f"""
-            SELECT t.id, t.asunto, t.mensaje, t.estado, t.prioridad, t.created_at,
+            SELECT t.id, t.asunto, t.mensaje,
+                   CASE
+                       WHEN t.estado IS NULL OR t.estado = '' OR t.estado = 'nuevo' THEN 'abierto'
+                       ELSE t.estado
+                   END AS estado,
+                   COALESCE(t.prioridad, 'normal') AS prioridad,
+                   t.created_at,
                    u.nombre || ' ' || u.apellido AS usuario_nombre,
                    u.email AS usuario_email
             FROM tickets_soporte t
@@ -216,8 +231,8 @@ def obtener_ticket_admin(
             "id": ticket.id,
             "asunto": ticket.asunto,
             "mensaje": ticket.mensaje,
-            "estado": ticket.estado,
-            "prioridad": ticket.prioridad,
+            "estado": "abierto" if ticket.estado in (None, "", "nuevo") else ticket.estado,
+            "prioridad": ticket.prioridad or "normal",
             "respuesta": ticket.respuesta,
             "respondido_en": ticket.respondido_en.isoformat() if ticket.respondido_en else None,
             "created_at": ticket.created_at.isoformat() if ticket.created_at else None,

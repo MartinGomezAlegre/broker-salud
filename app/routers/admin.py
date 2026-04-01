@@ -254,16 +254,60 @@ def listar_usuarios(
             params["q"] = f"%{buscar}%"
             rows = db.execute(text("""
                 SELECT id, nombre, apellido, email, telefono, dni,
-                       fecha_nacimiento, rol, activo, created_at
-                FROM usuarios
+                       fecha_nacimiento, rol, activo, created_at,
+                       plan_nombre, estado_suscripcion
+                FROM (
+                    SELECT u.id, u.nombre, u.apellido, u.email, u.telefono, u.dni,
+                           u.fecha_nacimiento, u.rol, u.activo, u.created_at,
+                           sub.plan_nombre, sub.estado_suscripcion
+                    FROM usuarios u
+                    LEFT JOIN LATERAL (
+                        SELECT p.nombre AS plan_nombre,
+                               s.estado AS estado_suscripcion
+                        FROM suscripciones s
+                        JOIN planes p ON p.id = s.plan_id
+                        WHERE s.usuario_id = u.id
+                        ORDER BY
+                            CASE s.estado
+                                WHEN 'activa' THEN 1
+                                WHEN 'pendiente_pago' THEN 2
+                                ELSE 3
+                            END,
+                            COALESCE(s.fecha_vencimiento, s.created_at) DESC,
+                            s.created_at DESC
+                        LIMIT 1
+                    ) sub ON true
+                ) usuarios_con_suscripcion
                 WHERE nombre ILIKE :q OR apellido ILIKE :q OR email ILIKE :q
                 ORDER BY created_at DESC LIMIT :limit OFFSET :offset
             """), params).fetchall()
         else:
             rows = db.execute(text("""
                 SELECT id, nombre, apellido, email, telefono, dni,
-                       fecha_nacimiento, rol, activo, created_at
-                FROM usuarios
+                       fecha_nacimiento, rol, activo, created_at,
+                       plan_nombre, estado_suscripcion
+                FROM (
+                    SELECT u.id, u.nombre, u.apellido, u.email, u.telefono, u.dni,
+                           u.fecha_nacimiento, u.rol, u.activo, u.created_at,
+                           sub.plan_nombre, sub.estado_suscripcion
+                    FROM usuarios u
+                    LEFT JOIN LATERAL (
+                        SELECT p.nombre AS plan_nombre,
+                               s.estado AS estado_suscripcion
+                        FROM suscripciones s
+                        JOIN planes p ON p.id = s.plan_id
+                        WHERE s.usuario_id = u.id
+                        ORDER BY
+                            CASE s.estado
+                                WHEN 'activa' THEN 1
+                                WHEN 'pendiente_pago' THEN 2
+                                ELSE 3
+                            END,
+                            COALESCE(s.fecha_vencimiento, s.created_at) DESC,
+                            s.created_at DESC
+                        LIMIT 1
+                    ) sub ON true
+                ) usuarios_con_suscripcion
                 ORDER BY created_at DESC LIMIT :limit OFFSET :offset
             """), params).fetchall()
 
@@ -278,6 +322,8 @@ def listar_usuarios(
                 "fecha_nacimiento": r.fecha_nacimiento.isoformat() if r.fecha_nacimiento else None,
                 "rol": r.rol,
                 "activo": r.activo,
+                "plan_nombre": r.plan_nombre,
+                "estado_suscripcion": r.estado_suscripcion,
                 "created_at": r.created_at.isoformat() if r.created_at else None,
             }
             for r in rows
