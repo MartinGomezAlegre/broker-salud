@@ -91,8 +91,9 @@ def agregar_beneficiario(
             raise HTTPException(status_code=404, detail="No tenés una suscripción activa")
 
         max_benef = suscripcion.max_beneficiarios or 0
+        cupo_adicional = max(max_benef - 1, 0)
 
-        if max_benef <= 0 or (suscripcion.tipo and suscripcion.tipo.lower() == "personal"):
+        if cupo_adicional <= 0 or (suscripcion.tipo and suscripcion.tipo.lower() == "personal"):
             raise HTTPException(
                 status_code=400,
                 detail="Tu plan no admite beneficiarios adicionales"
@@ -103,7 +104,7 @@ def agregar_beneficiario(
             {"sid": suscripcion.id}
         ).fetchone().cnt
 
-        if cantidad_actual >= max_benef:
+        if cantidad_actual >= cupo_adicional:
             raise HTTPException(
                 status_code=400,
                 detail="Ya alcanzaste el límite de beneficiarios de tu plan"
