@@ -30,14 +30,59 @@ def contratar_plan(
             raise HTTPException(status_code=404, detail="Plan no encontrado o inactivo")
 
         suscripcion_existente = db.execute(
-            text("""SELECT id FROM suscripciones
-                    WHERE usuario_id = :usuario_id
-                    AND estado IN ('activa', 'pendiente_pago')"""),
+            text("""
+                SELECT s.id, s.plan_id, s.estado, p.max_beneficiarios
+                FROM suscripciones s
+                JOIN planes p ON p.id = s.plan_id
+                WHERE s.usuario_id = :usuario_id
+                  AND s.estado IN ('activa', 'pendiente_pago')
+                ORDER BY
+                    CASE s.estado
+                        WHEN 'activa' THEN 1
+                        WHEN 'pendiente_pago' THEN 2
+                        ELSE 3
+                    END,
+                    s.created_at DESC
+                LIMIT 1
+            """),
             {"usuario_id": usuario_id}
         ).fetchone()
 
         if suscripcion_existente:
-            raise HTTPException(status_code=400, detail="Ya tenés una suscripción activa o pendiente de pago")
+            if suscripcion_existente.plan_id == datos.plan_id:
+                raise HTTPException(status_code=400, detail="Ya tenes este plan como plan actual")
+
+            max_actual = suscripcion_existente.max_beneficiarios or 0
+            max_nuevo = plan.max_beneficiarios or 0
+
+            if suscripcion_existente.estado == "activa" and max_nuevo > max_actual:
+                fecha_inicio = date.today()
+                fecha_vencimiento = fecha_inicio + timedelta(days=30)
+
+                resultado = db.execute(
+                    text("""
+                        UPDATE suscripciones
+                        SET plan_id = :plan_id,
+                            estado = 'pendiente_pago',
+                            fecha_inicio = :fecha_inicio,
+                            fecha_vencimiento = :fecha_vencimiento,
+                            precio_pagado = :precio_pagado
+                        WHERE id = :suscripcion_id
+                        RETURNING *
+                    """),
+                    {
+                        "suscripcion_id": suscripcion_existente.id,
+                        "plan_id": datos.plan_id,
+                        "fecha_inicio": fecha_inicio,
+                        "fecha_vencimiento": fecha_vencimiento,
+                        "precio_pagado": plan.precio_mensual
+                    }
+                ).fetchone()
+
+                db.commit()
+                return resultado
+
+            raise HTTPException(status_code=400, detail="Ya tenes una suscripcion activa o pendiente de pago")
 
         fecha_inicio = date.today()
         fecha_vencimiento = fecha_inicio + timedelta(days=30)
@@ -73,7 +118,9 @@ def mi_suscripcion(
     try:
         suscripcion = db.execute(
             text("""SELECT s.*, p.nombre AS nombre_plan,
-                           p.descripcion AS descripcion_plan
+                           p.descripcion AS descripcion_plan,
+                           p.max_beneficiarios,
+                           p.tipo AS tipo_plan
                     FROM suscripciones s
                     JOIN planes p ON p.id = s.plan_id
                     WHERE s.usuario_id = :usuario_id
@@ -109,6 +156,8 @@ def mi_suscripcion(
             "precio_pagado": float(suscripcion.precio_pagado) if suscripcion.precio_pagado is not None else None,
             "nombre_plan": suscripcion.nombre_plan,
             "descripcion_plan": suscripcion.descripcion_plan,
+            "max_beneficiarios": suscripcion.max_beneficiarios,
+            "tipo_plan": suscripcion.tipo_plan,
             "fue_exportado": bool(exportado.exportado),
         }
     except HTTPException:

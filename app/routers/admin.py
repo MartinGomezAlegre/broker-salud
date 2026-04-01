@@ -335,6 +335,93 @@ def listar_usuarios(
         raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
+@router.get("/usuarios/{target_usuario_id}")
+def detalle_usuario(
+    target_usuario_id: int,
+    db: Session = Depends(get_db),
+    usuario_id: int = Depends(require_admin)
+):
+    try:
+        usuario = db.execute(text("""
+            SELECT u.id, u.nombre, u.apellido, u.email, u.telefono, u.dni,
+                   u.fecha_nacimiento, u.rol, u.activo, u.created_at,
+                   sub.suscripcion_id, sub.plan_id, sub.plan_nombre,
+                   sub.estado_suscripcion, sub.fecha_inicio_suscripcion,
+                   sub.fecha_vencimiento, sub.max_beneficiarios
+            FROM usuarios u
+            LEFT JOIN LATERAL (
+                SELECT s.id AS suscripcion_id,
+                       s.plan_id,
+                       p.nombre AS plan_nombre,
+                       s.estado AS estado_suscripcion,
+                       s.fecha_inicio AS fecha_inicio_suscripcion,
+                       s.fecha_vencimiento,
+                       p.max_beneficiarios
+                FROM suscripciones s
+                JOIN planes p ON p.id = s.plan_id
+                WHERE s.usuario_id = u.id
+                ORDER BY
+                    CASE s.estado
+                        WHEN 'activa' THEN 1
+                        WHEN 'pendiente_pago' THEN 2
+                        ELSE 3
+                    END,
+                    COALESCE(s.fecha_vencimiento, s.created_at) DESC,
+                    s.created_at DESC
+                LIMIT 1
+            ) sub ON true
+            WHERE u.id = :usuario_id
+        """), {"usuario_id": target_usuario_id}).fetchone()
+
+        if not usuario:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+        beneficiarios_rows = []
+        if usuario.suscripcion_id:
+            beneficiarios_rows = db.execute(text("""
+                SELECT id, nombre, apellido, dni, fecha_nacimiento, relacion
+                FROM beneficiarios
+                WHERE suscripcion_id = :suscripcion_id
+                ORDER BY created_at ASC
+            """), {"suscripcion_id": usuario.suscripcion_id}).fetchall()
+
+        return {
+            "id": usuario.id,
+            "nombre": usuario.nombre,
+            "apellido": usuario.apellido,
+            "email": usuario.email,
+            "telefono": usuario.telefono,
+            "dni": usuario.dni if usuario.dni is not None else "",
+            "fecha_nacimiento": usuario.fecha_nacimiento.isoformat() if usuario.fecha_nacimiento else None,
+            "rol": usuario.rol,
+            "activo": usuario.activo,
+            "created_at": usuario.created_at.isoformat() if usuario.created_at else None,
+            "suscripcion_id": usuario.suscripcion_id,
+            "plan_id": usuario.plan_id,
+            "plan_nombre": usuario.plan_nombre,
+            "estado_suscripcion": usuario.estado_suscripcion,
+            "fecha_inicio_suscripcion": usuario.fecha_inicio_suscripcion.isoformat() if usuario.fecha_inicio_suscripcion else None,
+            "fecha_vencimiento": usuario.fecha_vencimiento.isoformat() if usuario.fecha_vencimiento else None,
+            "max_beneficiarios": usuario.max_beneficiarios,
+            "beneficiarios": [
+                {
+                    "id": item.id,
+                    "nombre": item.nombre,
+                    "apellido": item.apellido,
+                    "dni": item.dni,
+                    "fecha_nacimiento": item.fecha_nacimiento.isoformat() if item.fecha_nacimiento else None,
+                    "relacion": item.relacion,
+                }
+                for item in beneficiarios_rows
+            ],
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Error interno: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
+
+
 # ══ GESTIÓN DE SUSCRIPCIONES ══
 
 @router.get("/suscripciones")
