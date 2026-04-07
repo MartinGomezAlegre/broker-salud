@@ -13,6 +13,10 @@ class UsuarioCrear(BaseModel):
     dni: Optional[str] = None
     cuit: str
     direccion: str
+    localidad: str
+    codigo_postal: str
+    provincia: str
+    pais: str
 
     @field_validator("contrasenia")
     @classmethod
@@ -40,6 +44,20 @@ class UsuarioCrear(BaseModel):
     def validar_direccion(cls, v):
         if len(v.strip()) < 6:
             raise ValueError("Ingresá una dirección válida")
+        return v.strip()
+
+    @field_validator("localidad", "provincia", "pais")
+    @classmethod
+    def validar_ubicacion(cls, v):
+        if len(v.strip()) < 2:
+            raise ValueError("Completá este dato correctamente")
+        return v.strip()
+
+    @field_validator("codigo_postal")
+    @classmethod
+    def validar_codigo_postal(cls, v):
+        if len(v.strip()) < 3:
+            raise ValueError("Ingresá un código postal válido")
         return v.strip()
 
 

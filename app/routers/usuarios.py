@@ -28,9 +28,9 @@ def crear_usuario(usuario: UsuarioCrear, db: Session = Depends(get_db)):
 
         db.execute(
             text("""INSERT INTO usuarios
-                    (nombre, apellido, email, telefono, fecha_nacimiento, dni, cuit, direccion, password_hash, activo)
+                    (nombre, apellido, email, telefono, fecha_nacimiento, dni, cuit, direccion, localidad, codigo_postal, provincia, pais, password_hash, activo)
                     VALUES
-                    (:nombre, :apellido, :email, :telefono, :fecha_nacimiento, :dni, :cuit, :direccion, :password_hash, true)"""),
+                    (:nombre, :apellido, :email, :telefono, :fecha_nacimiento, :dni, :cuit, :direccion, :localidad, :codigo_postal, :provincia, :pais, :password_hash, true)"""),
             {
                 "nombre": usuario.nombre,
                 "apellido": usuario.apellido,
@@ -40,6 +40,10 @@ def crear_usuario(usuario: UsuarioCrear, db: Session = Depends(get_db)):
                 "dni": usuario.dni,
                 "cuit": usuario.cuit,
                 "direccion": usuario.direccion,
+                "localidad": usuario.localidad,
+                "codigo_postal": usuario.codigo_postal,
+                "provincia": usuario.provincia,
+                "pais": usuario.pais,
                 "password_hash": hashear_password(usuario.contrasenia)
             }
         )
@@ -74,7 +78,7 @@ def mi_perfil(
         usuario = db.execute(
             text("""SELECT id, nombre, apellido, email, telefono,
                            dni, fecha_nacimiento, cuit, direccion,
-                           localidad, provincia, created_at
+                           localidad, codigo_postal, provincia, pais, created_at
                     FROM usuarios WHERE id = :id"""),
             {"id": usuario_id}
         ).fetchone()
@@ -92,7 +96,9 @@ def mi_perfil(
             "cuit": usuario.cuit,
             "direccion": usuario.direccion,
             "localidad": usuario.localidad,
+            "codigo_postal": usuario.codigo_postal,
             "provincia": usuario.provincia,
+            "pais": usuario.pais,
             "created_at": usuario.created_at.isoformat()
                 if usuario.created_at else None,
         }
@@ -111,7 +117,9 @@ class PerfilActualizar(BaseModel):
     cuit: Optional[str] = None
     direccion: Optional[str] = None
     localidad: Optional[str] = None
+    codigo_postal: Optional[str] = None
     provincia: Optional[str] = None
+    pais: Optional[str] = None
 
 
 @router.put("/me")
@@ -145,9 +153,15 @@ def actualizar_perfil(
         if datos.localidad is not None:
             campos.append("localidad = :localidad")
             params["localidad"] = datos.localidad
+        if datos.codigo_postal is not None:
+            campos.append("codigo_postal = :codigo_postal")
+            params["codigo_postal"] = datos.codigo_postal
         if datos.provincia is not None:
             campos.append("provincia = :provincia")
             params["provincia"] = datos.provincia
+        if datos.pais is not None:
+            campos.append("pais = :pais")
+            params["pais"] = datos.pais
 
         if campos:
             db.execute(
@@ -159,7 +173,7 @@ def actualizar_perfil(
         usuario = db.execute(
             text("""SELECT id, nombre, apellido, email, telefono,
                            dni, fecha_nacimiento, cuit, direccion,
-                           localidad, provincia, created_at
+                           localidad, codigo_postal, provincia, pais, created_at
                     FROM usuarios WHERE id = :id"""),
             {"id": usuario_id}
         ).fetchone()
@@ -176,7 +190,9 @@ def actualizar_perfil(
             "cuit": usuario.cuit,
             "direccion": usuario.direccion,
             "localidad": usuario.localidad,
+            "codigo_postal": usuario.codigo_postal,
             "provincia": usuario.provincia,
+            "pais": usuario.pais,
             "created_at": usuario.created_at.isoformat()
                 if usuario.created_at else None,
         }
