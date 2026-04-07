@@ -31,6 +31,7 @@ class EmpresaCrear(BaseModel):
     direccion: Optional[str] = None
     localidad: Optional[str] = None
     provincia: Optional[str] = None
+    responsabilidad_iva: Optional[str] = None
     telefono: Optional[str] = Field(default=None, validation_alias=AliasChoices("telefono", "contacto_telefono"))
     email_contacto: str = Field(validation_alias=AliasChoices("email_contacto", "contacto_email"))
     contacto_nombre: str
@@ -45,6 +46,7 @@ class EmpresaActualizar(BaseModel):
     direccion: Optional[str] = None
     localidad: Optional[str] = None
     provincia: Optional[str] = None
+    responsabilidad_iva: Optional[str] = None
     telefono: Optional[str] = Field(default=None, validation_alias=AliasChoices("telefono", "contacto_telefono"))
     email_contacto: Optional[str] = Field(default=None, validation_alias=AliasChoices("email_contacto", "contacto_email"))
     contacto_nombre: Optional[str] = None
@@ -75,13 +77,16 @@ class EmpleadoCrear(BaseModel):
     dni: str
     email: str
     cargo: Optional[str] = None
+    telefono: Optional[str] = None
 
 
 class EmpleadoActualizar(BaseModel):
     nombre: Optional[str] = None
     apellido: Optional[str] = None
+    dni: Optional[str] = None
     email: Optional[str] = None
     cargo: Optional[str] = None
+    telefono: Optional[str] = None
 
 
 class CambiarEstadoEmpleado(BaseModel):
@@ -151,6 +156,7 @@ def listar_empresas(
 
         rows = db.execute(text(f"""
             SELECT e.id, e.razon_social, e.cuit, e.nombre_comercial, e.rubro,
+                   e.direccion, e.localidad, e.provincia, e.responsabilidad_iva,
                    e.email_contacto, e.contacto_nombre, e.contacto_cargo, e.telefono,
                    e.activo, e.created_at,
                    COUNT(em.id) FILTER (WHERE em.activo = true) AS empleados_activos,
@@ -170,6 +176,7 @@ def listar_empresas(
             LEFT JOIN planes p ON p.id = se.plan_id
             {where}
             GROUP BY e.id, e.razon_social, e.cuit, e.nombre_comercial, e.rubro,
+                     e.direccion, e.localidad, e.provincia, e.responsabilidad_iva,
                      e.email_contacto, e.contacto_nombre, e.contacto_cargo, e.telefono,
                      e.activo, e.created_at,
                      se.estado, se.plan_id, p.nombre, se.precio_por_empleado, se.precio_total,
@@ -184,6 +191,10 @@ def listar_empresas(
                 "cuit": r.cuit,
                 "nombre_comercial": r.nombre_comercial,
                 "rubro": r.rubro,
+                "direccion": r.direccion,
+                "localidad": r.localidad,
+                "provincia": r.provincia,
+                "responsabilidad_iva": r.responsabilidad_iva,
                 "contacto_email": r.email_contacto,
                 "contacto_nombre": r.contacto_nombre,
                 "contacto_cargo": r.contacto_cargo,
@@ -229,10 +240,10 @@ def crear_empresa(
         result = db.execute(text("""
             INSERT INTO empresas
               (razon_social, cuit, nombre_comercial, rubro, direccion, localidad,
-               provincia, telefono, email_contacto, contacto_nombre, contacto_cargo, activo)
+               provincia, responsabilidad_iva, telefono, email_contacto, contacto_nombre, contacto_cargo, activo)
             VALUES
               (:razon_social, :cuit, :nombre_comercial, :rubro, :direccion, :localidad,
-               :provincia, :telefono, :email_contacto, :contacto_nombre, :contacto_cargo, true)
+               :provincia, :responsabilidad_iva, :telefono, :email_contacto, :contacto_nombre, :contacto_cargo, true)
             RETURNING id
         """), {
             "razon_social": datos.razon_social,
@@ -242,6 +253,7 @@ def crear_empresa(
             "direccion": datos.direccion,
             "localidad": datos.localidad,
             "provincia": datos.provincia,
+            "responsabilidad_iva": datos.responsabilidad_iva,
             "telefono": datos.telefono,
             "email_contacto": datos.email_contacto,
             "contacto_nombre": datos.contacto_nombre,
@@ -287,7 +299,7 @@ def detalle_empresa(
         """), {"id": empresa_id}).fetchone()
 
         empleados = db.execute(text("""
-            SELECT id, nombre, apellido, dni, email, cargo,
+            SELECT id, nombre, apellido, dni, email, cargo, telefono,
                    activo, fecha_alta, fecha_baja, usuario_id
             FROM empleados_empresa
             WHERE empresa_id = :id
@@ -321,6 +333,10 @@ def detalle_empresa(
             "nombre_comercial": empresa.nombre_comercial,
             "cuit": empresa.cuit,
             "rubro": empresa.rubro,
+            "direccion": empresa.direccion,
+            "localidad": empresa.localidad,
+            "provincia": empresa.provincia,
+            "responsabilidad_iva": empresa.responsabilidad_iva,
             "contacto_nombre": empresa.contacto_nombre,
             "contacto_cargo": empresa.contacto_cargo,
             "contacto_email": empresa.email_contacto,
@@ -356,6 +372,7 @@ def detalle_empresa(
                 {
                     "id": e.id, "nombre": e.nombre, "apellido": e.apellido,
                     "dni": e.dni, "email": e.email, "cargo": e.cargo,
+                    "telefono": e.telefono,
                     "activo": e.activo,
                     "fecha_alta": e.fecha_alta.isoformat() if e.fecha_alta else None,
                     "fecha_baja": e.fecha_baja.isoformat() if e.fecha_baja else None,
@@ -669,7 +686,7 @@ def listar_empleados(
             params["activo"] = activo
 
         rows = db.execute(text(f"""
-            SELECT id, nombre, apellido, dni, email, cargo,
+            SELECT id, nombre, apellido, dni, email, cargo, telefono,
                    activo, fecha_alta, fecha_baja, usuario_id
             FROM empleados_empresa
             WHERE empresa_id = :empresa_id {filtro}
@@ -680,6 +697,7 @@ def listar_empleados(
             {
                 "id": e.id, "nombre": e.nombre, "apellido": e.apellido,
                 "dni": e.dni, "email": e.email, "cargo": e.cargo,
+                "telefono": e.telefono,
                 "activo": e.activo,
                 "fecha_alta": e.fecha_alta.isoformat() if e.fecha_alta else None,
                 "fecha_baja": e.fecha_baja.isoformat() if e.fecha_baja else None,
@@ -713,10 +731,10 @@ def _crear_empleado(empresa_id: int, datos: EmpleadoCrear, db: Session) -> dict:
 
     result = db.execute(text("""
         INSERT INTO empleados_empresa
-          (empresa_id, nombre, apellido, dni, email, cargo, activo, fecha_alta, usuario_id)
+          (empresa_id, nombre, apellido, dni, email, cargo, telefono, activo, fecha_alta, usuario_id)
         VALUES
-          (:empresa_id, :nombre, :apellido, :dni, :email, :cargo, true, CURRENT_DATE, :usuario_id)
-        RETURNING id, nombre, apellido, dni, email, cargo, activo, fecha_alta, usuario_id
+          (:empresa_id, :nombre, :apellido, :dni, :email, :cargo, :telefono, true, CURRENT_DATE, :usuario_id)
+        RETURNING id, nombre, apellido, dni, email, cargo, telefono, activo, fecha_alta, usuario_id
     """), {
         "empresa_id": empresa_id,
         "nombre": datos.nombre,
@@ -724,12 +742,14 @@ def _crear_empleado(empresa_id: int, datos: EmpleadoCrear, db: Session) -> dict:
         "dni": datos.dni,
         "email": datos.email,
         "cargo": datos.cargo,
+        "telefono": datos.telefono,
         "usuario_id": usuario_id,
     }).fetchone()
 
     return {
         "id": result.id, "nombre": result.nombre, "apellido": result.apellido,
         "dni": result.dni, "email": result.email, "cargo": result.cargo,
+        "telefono": result.telefono,
         "activo": result.activo,
         "fecha_alta": result.fecha_alta.isoformat() if result.fecha_alta else None,
         "usuario_id": result.usuario_id,
@@ -796,6 +816,7 @@ def agregar_empleados_bulk(
                     dni=partes[2],
                     email=partes[3],
                     cargo=partes[4] if len(partes) > 4 else None,
+                    telefono=partes[5] if len(partes) > 5 else None,
                 ))
         elif datos.empleados:
             empleados_lista = datos.empleados
@@ -858,7 +879,7 @@ def actualizar_empleado(
             db.commit()
 
         actualizado = db.execute(text("""
-            SELECT id, nombre, apellido, dni, email, cargo,
+            SELECT id, nombre, apellido, dni, email, cargo, telefono,
                    activo, fecha_alta, fecha_baja, usuario_id
             FROM empleados_empresa WHERE id = :id
         """), {"id": empleado_id}).fetchone()
@@ -867,6 +888,7 @@ def actualizar_empleado(
             "id": actualizado.id, "nombre": actualizado.nombre,
             "apellido": actualizado.apellido, "dni": actualizado.dni,
             "email": actualizado.email, "cargo": actualizado.cargo,
+            "telefono": actualizado.telefono,
             "activo": actualizado.activo,
             "fecha_alta": actualizado.fecha_alta.isoformat() if actualizado.fecha_alta else None,
             "fecha_baja": actualizado.fecha_baja.isoformat() if actualizado.fecha_baja else None,
@@ -915,7 +937,7 @@ def cambiar_estado_empleado(
         db.commit()
 
         actualizado = db.execute(text("""
-            SELECT id, nombre, apellido, dni, email, cargo,
+            SELECT id, nombre, apellido, dni, email, cargo, telefono,
                    activo, fecha_alta, fecha_baja, usuario_id
             FROM empleados_empresa WHERE id = :id
         """), {"id": empleado_id}).fetchone()
@@ -924,6 +946,7 @@ def cambiar_estado_empleado(
             "id": actualizado.id, "nombre": actualizado.nombre,
             "apellido": actualizado.apellido, "dni": actualizado.dni,
             "email": actualizado.email, "cargo": actualizado.cargo,
+            "telefono": actualizado.telefono,
             "activo": actualizado.activo,
             "fecha_alta": actualizado.fecha_alta.isoformat() if actualizado.fecha_alta else None,
             "fecha_baja": actualizado.fecha_baja.isoformat() if actualizado.fecha_baja else None,
@@ -992,7 +1015,7 @@ def exportar_empleados(
             raise HTTPException(status_code=404, detail="Empresa no encontrada")
 
         rows = db.execute(text("""
-            SELECT nombre, apellido, dni, email, cargo,
+            SELECT nombre, apellido, dni, email, cargo, telefono,
                    activo, fecha_alta, fecha_baja
             FROM empleados_empresa
             WHERE empresa_id = :id
@@ -1002,12 +1025,12 @@ def exportar_empleados(
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "Empleados"
-        ws.append(["Nombre", "Apellido", "DNI", "Email", "Cargo",
+        ws.append(["Nombre", "Apellido", "DNI", "Email", "Cargo", "Telefono",
                    "Estado", "Fecha Alta", "Fecha Baja"])
 
         for r in rows:
             ws.append([
-                r.nombre, r.apellido, r.dni or "", r.email, r.cargo or "",
+                r.nombre, r.apellido, r.dni or "", r.email, r.cargo or "", r.telefono or "",
                 "Activo" if r.activo else "Inactivo",
                 r.fecha_alta.isoformat() if r.fecha_alta else "",
                 r.fecha_baja.isoformat() if r.fecha_baja else "",

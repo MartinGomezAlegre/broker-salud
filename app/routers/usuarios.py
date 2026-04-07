@@ -28,9 +28,9 @@ def crear_usuario(usuario: UsuarioCrear, db: Session = Depends(get_db)):
 
         db.execute(
             text("""INSERT INTO usuarios
-                    (nombre, apellido, email, telefono, fecha_nacimiento, dni, password_hash, activo)
+                    (nombre, apellido, email, telefono, fecha_nacimiento, dni, cuit, direccion, password_hash, activo)
                     VALUES
-                    (:nombre, :apellido, :email, :telefono, :fecha_nacimiento, :dni, :password_hash, true)"""),
+                    (:nombre, :apellido, :email, :telefono, :fecha_nacimiento, :dni, :cuit, :direccion, :password_hash, true)"""),
             {
                 "nombre": usuario.nombre,
                 "apellido": usuario.apellido,
@@ -38,6 +38,8 @@ def crear_usuario(usuario: UsuarioCrear, db: Session = Depends(get_db)):
                 "telefono": usuario.telefono,
                 "fecha_nacimiento": usuario.fecha_nacimiento,
                 "dni": usuario.dni,
+                "cuit": usuario.cuit,
+                "direccion": usuario.direccion,
                 "password_hash": hashear_password(usuario.contrasenia)
             }
         )
@@ -71,7 +73,8 @@ def mi_perfil(
     try:
         usuario = db.execute(
             text("""SELECT id, nombre, apellido, email, telefono,
-                           dni, fecha_nacimiento, created_at
+                           dni, fecha_nacimiento, cuit, direccion,
+                           localidad, provincia, created_at
                     FROM usuarios WHERE id = :id"""),
             {"id": usuario_id}
         ).fetchone()
@@ -86,6 +89,10 @@ def mi_perfil(
             "dni": usuario.dni,
             "fecha_nacimiento": usuario.fecha_nacimiento.isoformat()
                 if usuario.fecha_nacimiento else None,
+            "cuit": usuario.cuit,
+            "direccion": usuario.direccion,
+            "localidad": usuario.localidad,
+            "provincia": usuario.provincia,
             "created_at": usuario.created_at.isoformat()
                 if usuario.created_at else None,
         }
@@ -101,6 +108,10 @@ class PerfilActualizar(BaseModel):
     apellido: Optional[str] = None
     telefono: Optional[str] = None
     dni: Optional[str] = None
+    cuit: Optional[str] = None
+    direccion: Optional[str] = None
+    localidad: Optional[str] = None
+    provincia: Optional[str] = None
 
 
 @router.put("/me")
@@ -125,6 +136,18 @@ def actualizar_perfil(
         if datos.dni is not None:
             campos.append("dni = :dni")
             params["dni"] = datos.dni
+        if datos.cuit is not None:
+            campos.append("cuit = :cuit")
+            params["cuit"] = datos.cuit
+        if datos.direccion is not None:
+            campos.append("direccion = :direccion")
+            params["direccion"] = datos.direccion
+        if datos.localidad is not None:
+            campos.append("localidad = :localidad")
+            params["localidad"] = datos.localidad
+        if datos.provincia is not None:
+            campos.append("provincia = :provincia")
+            params["provincia"] = datos.provincia
 
         if campos:
             db.execute(
@@ -135,7 +158,8 @@ def actualizar_perfil(
 
         usuario = db.execute(
             text("""SELECT id, nombre, apellido, email, telefono,
-                           dni, fecha_nacimiento, created_at
+                           dni, fecha_nacimiento, cuit, direccion,
+                           localidad, provincia, created_at
                     FROM usuarios WHERE id = :id"""),
             {"id": usuario_id}
         ).fetchone()
@@ -149,6 +173,10 @@ def actualizar_perfil(
             "dni": usuario.dni,
             "fecha_nacimiento": usuario.fecha_nacimiento.isoformat()
                 if usuario.fecha_nacimiento else None,
+            "cuit": usuario.cuit,
+            "direccion": usuario.direccion,
+            "localidad": usuario.localidad,
+            "provincia": usuario.provincia,
             "created_at": usuario.created_at.isoformat()
                 if usuario.created_at else None,
         }

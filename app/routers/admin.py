@@ -344,7 +344,8 @@ def detalle_usuario(
     try:
         usuario = db.execute(text("""
             SELECT u.id, u.nombre, u.apellido, u.email, u.telefono, u.dni,
-                   u.fecha_nacimiento, u.rol, u.activo, u.created_at,
+                   u.fecha_nacimiento, u.cuit, u.direccion, u.localidad,
+                   u.provincia, u.rol, u.activo, u.created_at,
                    sub.suscripcion_id, sub.plan_id, sub.plan_nombre,
                    sub.estado_suscripcion, sub.fecha_inicio_suscripcion,
                    sub.fecha_vencimiento, sub.max_beneficiarios
@@ -393,6 +394,10 @@ def detalle_usuario(
             "telefono": usuario.telefono,
             "dni": usuario.dni if usuario.dni is not None else "",
             "fecha_nacimiento": usuario.fecha_nacimiento.isoformat() if usuario.fecha_nacimiento else None,
+            "cuit": usuario.cuit,
+            "direccion": usuario.direccion,
+            "localidad": usuario.localidad,
+            "provincia": usuario.provincia,
             "rol": usuario.rol,
             "activo": usuario.activo,
             "created_at": usuario.created_at.isoformat() if usuario.created_at else None,

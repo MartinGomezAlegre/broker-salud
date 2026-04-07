@@ -11,6 +11,8 @@ class UsuarioCrear(BaseModel):
     fecha_nacimiento: date
     contrasenia: str
     dni: Optional[str] = None
+    cuit: str
+    direccion: str
 
     @field_validator("contrasenia")
     @classmethod
@@ -24,6 +26,20 @@ class UsuarioCrear(BaseModel):
     def validar_nombre(cls, v):
         if len(v.strip()) < 2:
             raise ValueError("Debe tener al menos 2 caracteres")
+        return v.strip()
+
+    @field_validator("cuit")
+    @classmethod
+    def validar_cuit(cls, v):
+        if len(v.strip()) < 8:
+            raise ValueError("Ingresá un CUIT o CUIL válido")
+        return v.strip()
+
+    @field_validator("direccion")
+    @classmethod
+    def validar_direccion(cls, v):
+        if len(v.strip()) < 6:
+            raise ValueError("Ingresá una dirección válida")
         return v.strip()
 
 
