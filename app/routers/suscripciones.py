@@ -165,3 +165,41 @@ def mi_suscripcion(
     except Exception as e:
         logger.error("Error en mi_suscripcion: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Error interno del servidor.")
+
+
+@router.put("/mia/cancelar")
+def cancelar_mi_suscripcion(
+    db: Session = Depends(get_db),
+    usuario_id: int = Depends(get_current_user)
+):
+    try:
+        suscripcion = db.execute(
+            text("""
+                SELECT id, estado
+                FROM suscripciones
+                WHERE usuario_id = :usuario_id
+                  AND estado != 'cancelada'
+                ORDER BY created_at DESC
+                LIMIT 1
+            """),
+            {"usuario_id": usuario_id}
+        ).fetchone()
+
+        if not suscripcion:
+            raise HTTPException(status_code=404, detail="No tenes una suscripcion activa para dar de baja")
+
+        if suscripcion.estado == "cancelada":
+            raise HTTPException(status_code=400, detail="La suscripcion ya se encuentra cancelada")
+
+        db.execute(
+            text("UPDATE suscripciones SET estado = 'cancelada' WHERE id = :id"),
+            {"id": suscripcion.id}
+        )
+        db.commit()
+
+        return {"ok": True, "mensaje": "Suscripcion dada de baja correctamente"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Error en cancelar_mi_suscripcion: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
