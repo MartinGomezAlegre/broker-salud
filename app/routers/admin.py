@@ -40,11 +40,14 @@ def dashboard(
     try:
         mrr = db.execute(text("""
             SELECT COALESCE(SUM(precio_pagado), 0) as mrr
-            FROM suscripciones WHERE estado = 'activa'
+            FROM suscripciones
+            WHERE estado IN ('activa', 'cancelacion_programada')
         """)).fetchone()
 
         activos = db.execute(text("""
-            SELECT COUNT(*) as total FROM suscripciones WHERE estado = 'activa'
+            SELECT COUNT(*) as total
+            FROM suscripciones
+            WHERE estado IN ('activa', 'cancelacion_programada')
         """)).fetchone()
 
         nuevos_hoy = db.execute(text("""
@@ -70,7 +73,8 @@ def dashboard(
         sin_suscripcion = db.execute(text("""
             SELECT COUNT(*) as total FROM usuarios
             WHERE id NOT IN (
-                SELECT usuario_id FROM suscripciones WHERE estado = 'activa'
+                SELECT usuario_id FROM suscripciones
+                WHERE estado IN ('activa', 'cancelacion_programada')
             )
         """)).fetchone()
 
@@ -87,7 +91,9 @@ def dashboard(
         planes = db.execute(text("""
             SELECT p.nombre, COUNT(s.id) as suscriptores
             FROM planes p
-            LEFT JOIN suscripciones s ON p.id = s.plan_id AND s.estado = 'activa'
+            LEFT JOIN suscripciones s
+              ON p.id = s.plan_id
+             AND s.estado IN ('activa', 'cancelacion_programada')
             GROUP BY p.nombre
             ORDER BY suscriptores DESC
         """)).fetchall()
@@ -101,7 +107,7 @@ def dashboard(
                    COALESCE(SUM(s.precio_pagado), 0) as revenue
             FROM planes p
             LEFT JOIN suscripciones s ON p.id = s.plan_id
-              AND s.estado IN ('activa', 'pendiente_pago')
+              AND s.estado IN ('activa', 'cancelacion_programada', 'pendiente_pago')
             GROUP BY p.nombre
         """)).fetchall()
 
@@ -626,7 +632,7 @@ def obtener_alertas(
             AND created_at <= NOW() - INTERVAL '7 days'
             AND id NOT IN (
                 SELECT usuario_id FROM suscripciones
-                WHERE estado IN ('activa', 'pendiente_pago')
+                WHERE estado IN ('activa', 'cancelacion_programada', 'pendiente_pago')
             )
         """)).fetchone().total
 
@@ -694,7 +700,7 @@ def obtener_alertas(
 
         vencen_semana = db.execute(text("""
             SELECT COUNT(*) as total FROM suscripciones
-            WHERE estado = 'activa'
+            WHERE estado IN ('activa', 'cancelacion_programada')
               AND fecha_vencimiento BETWEEN CURRENT_DATE AND CURRENT_DATE + 7
         """)).fetchone().total
 
@@ -773,7 +779,7 @@ def cambiar_estado_usuario(
 
 # ─── Cambiar estado suscripción ────────────────────────────────────────────────
 
-ESTADOS_PERMITIDOS = {"activa", "cancelada", "pendiente_pago", "vencida"}
+ESTADOS_PERMITIDOS = {"activa", "cancelada", "cancelacion_programada", "pendiente_pago", "vencida"}
 
 
 class CambiarEstadoSuscripcion(BaseModel):
@@ -914,7 +920,9 @@ def metricas_embudo(
         """)).fetchone().total
 
         completaron_pago = db.execute(text("""
-            SELECT COUNT(*) as total FROM suscripciones WHERE estado = 'activa'
+            SELECT COUNT(*) as total
+            FROM suscripciones
+            WHERE estado IN ('activa', 'cancelacion_programada')
         """)).fetchone().total
 
         tasa_reg_checkout = round(iniciaron_checkout / total_usuarios * 100, 2) if total_usuarios > 0 else 0
@@ -968,7 +976,7 @@ def reporte_mensual(
         def _mrr(desde, hasta):
             return float(db.execute(text("""
                 SELECT COALESCE(SUM(precio_pagado), 0) as mrr FROM suscripciones
-                WHERE estado = 'activa'
+                WHERE estado IN ('activa', 'cancelacion_programada')
                 AND created_at >= :desde AND created_at < :hasta
             """), {"desde": desde, "hasta": hasta}).fetchone().mrr)
 
@@ -1049,7 +1057,7 @@ def procesar_vencimientos(
             FROM suscripciones s
             JOIN usuarios u ON u.id = s.usuario_id
             JOIN planes p ON p.id = s.plan_id
-            WHERE s.estado = 'activa'
+            WHERE s.estado IN ('activa', 'cancelacion_programada')
               AND s.fecha_vencimiento < CURRENT_DATE
         """)).fetchall()
 
@@ -1057,10 +1065,14 @@ def procesar_vencimientos(
             return {"procesadas": 0}
 
         ids = [r.id for r in vencidas]
-        db.execute(
-            text("UPDATE suscripciones SET estado = 'vencida' WHERE id = ANY(:ids)"),
-            {"ids": ids}
-        )
+        db.execute(text("""
+            UPDATE suscripciones
+            SET estado = CASE
+                WHEN estado = 'cancelacion_programada' THEN 'cancelada'
+                ELSE 'vencida'
+            END
+            WHERE id = ANY(:ids)
+        """), {"ids": ids})
         db.commit()
 
         from app.services.email import enviar_email_plan_vencido

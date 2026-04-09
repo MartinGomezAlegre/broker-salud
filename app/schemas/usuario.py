@@ -1,6 +1,7 @@
-from pydantic import BaseModel, EmailStr, field_validator
-from typing import Optional
 from datetime import date
+from typing import Optional
+
+from pydantic import BaseModel, EmailStr, field_validator
 
 
 class UsuarioCrear(BaseModel):
@@ -11,54 +12,62 @@ class UsuarioCrear(BaseModel):
     fecha_nacimiento: date
     contrasenia: str
     dni: Optional[str] = None
-    cuit: str
-    direccion: str
-    localidad: str
-    codigo_postal: str
-    provincia: str
-    pais: str
+    cuit: Optional[str] = None
+    direccion: Optional[str] = None
+    localidad: Optional[str] = None
+    codigo_postal: Optional[str] = None
+    provincia: Optional[str] = None
+    pais: Optional[str] = None
 
     @field_validator("contrasenia")
     @classmethod
-    def validar_contrasenia(cls, v):
-        if len(v) < 8:
-            raise ValueError("La contraseña debe tener al menos 8 caracteres")
-        return v
+    def validar_contrasenia(cls, value: str):
+        if len(value) < 8:
+            raise ValueError("La contrasena debe tener al menos 8 caracteres")
+        return value
 
     @field_validator("nombre", "apellido")
     @classmethod
-    def validar_nombre(cls, v):
-        if len(v.strip()) < 2:
+    def validar_nombre(cls, value: str):
+        if len(value.strip()) < 2:
             raise ValueError("Debe tener al menos 2 caracteres")
-        return v.strip()
+        return value.strip()
 
     @field_validator("cuit")
     @classmethod
-    def validar_cuit(cls, v):
-        if len(v.strip()) < 8:
-            raise ValueError("Ingresá un CUIT o CUIL válido")
-        return v.strip()
+    def validar_cuit(cls, value: Optional[str]):
+        if value is None or not value.strip():
+            return None
+        if len(value.strip()) < 8:
+            raise ValueError("Ingresa un CUIT o CUIL valido")
+        return value.strip()
 
     @field_validator("direccion")
     @classmethod
-    def validar_direccion(cls, v):
-        if len(v.strip()) < 6:
-            raise ValueError("Ingresá una dirección válida")
-        return v.strip()
+    def validar_direccion(cls, value: Optional[str]):
+        if value is None or not value.strip():
+            return None
+        if len(value.strip()) < 6:
+            raise ValueError("Ingresa una direccion valida")
+        return value.strip()
 
     @field_validator("localidad", "provincia", "pais")
     @classmethod
-    def validar_ubicacion(cls, v):
-        if len(v.strip()) < 2:
-            raise ValueError("Completá este dato correctamente")
-        return v.strip()
+    def validar_ubicacion(cls, value: Optional[str]):
+        if value is None or not value.strip():
+            return None
+        if len(value.strip()) < 2:
+            raise ValueError("Completa este dato correctamente")
+        return value.strip()
 
     @field_validator("codigo_postal")
     @classmethod
-    def validar_codigo_postal(cls, v):
-        if len(v.strip()) < 3:
-            raise ValueError("Ingresá un código postal válido")
-        return v.strip()
+    def validar_codigo_postal(cls, value: Optional[str]):
+        if value is None or not value.strip():
+            return None
+        if len(value.strip()) < 3:
+            raise ValueError("Ingresa un codigo postal valido")
+        return value.strip()
 
 
 class UsuarioRespuesta(BaseModel):

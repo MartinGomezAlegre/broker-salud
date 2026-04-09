@@ -7,6 +7,7 @@ from typing import Optional
 from app.database import get_db
 from app.routers.admin import require_admin
 from datetime import date
+from decimal import Decimal
 import json
 
 logger = logging.getLogger(__name__)
@@ -98,7 +99,7 @@ def _payload_a_dict(row) -> dict:
     return {
         key: (
             value.isoformat() if hasattr(value, "isoformat")
-            else float(value) if key == "valor" and value is not None
+            else float(value) if isinstance(value, Decimal)
             else value
         )
         for key, value in row._mapping.items()
@@ -112,6 +113,15 @@ def _descripcion_historial(accion: str, registro_id: int, anteriores: dict, nuev
         if anterior is not None and nuevo is not None:
             return f"Precio del plan actualizado de ARS {anterior} a ARS {nuevo}"
         return "Precio del plan actualizado"
+
+    nombre_plan = nuevos.get("nombre") or anteriores.get("nombre") or f"#{registro_id}"
+    if accion == "crear_plan":
+        return f"Se creo el plan {nombre_plan}"
+    if accion == "actualizar_plan":
+        return f"Se actualizaron los datos del plan {nombre_plan}"
+    if accion == "cambiar_estado_plan":
+        estado = "activo" if nuevos.get("activo") else "inactivo"
+        return f"El plan {nombre_plan} paso a estado {estado}"
 
     codigo = nuevos.get("codigo") or anteriores.get("codigo") or f"#{registro_id}"
     if accion == "crear_cupon":
@@ -161,6 +171,7 @@ def listar_planes_admin(
                 "orden_display": r.orden_display,
                 "created_at": r.created_at.isoformat() if r.created_at else None,
                 "suscriptores_activos": r.suscriptores_activos or 0,
+                "suscriptores": r.suscriptores_activos or 0,
                 "revenue_mensual": round(
                     (r.suscriptores_activos or 0) * float(r.precio_mensual or 0), 2
                 ),
@@ -204,6 +215,8 @@ def crear_plan(
         plan = db.execute(
             text("SELECT * FROM planes WHERE id = :id"), {"id": result.id}
         ).fetchone()
+        _registrar_auditoria(db, "crear_plan", "planes", result.id, {}, _payload_a_dict(plan))
+        db.commit()
         return {k: (float(v) if isinstance(v, type(plan.precio_mensual)) and v is not None
                     else (v.isoformat() if hasattr(v, "isoformat") else v))
                 for k, v in plan._mapping.items()}
@@ -248,6 +261,24 @@ def actualizar_plan_catalogo(
                 _registrar_auditoria(db, "cambio_precio_plan", "planes", plan_id,
                                      {"precio_mensual": precio_anterior},
                                      {"precio_mensual": cambios["precio_mensual"]})
+            elif "activo" in cambios:
+                _registrar_auditoria(
+                    db,
+                    "cambiar_estado_plan",
+                    "planes",
+                    plan_id,
+                    {"nombre": plan.nombre, "activo": plan.activo},
+                    {"nombre": plan.nombre, "activo": cambios["activo"]},
+                )
+            else:
+                _registrar_auditoria(
+                    db,
+                    "actualizar_plan",
+                    "planes",
+                    plan_id,
+                    _payload_a_dict(plan),
+                    {**_payload_a_dict(plan), **cambios},
+                )
             db.commit()
 
         actualizado = db.execute(
@@ -299,7 +330,12 @@ def historial_catalogo(
         rows = db.execute(text("""
             SELECT accion, tabla_afectada, registro_id, datos_anteriores, datos_nuevos, created_at
             FROM auditoria
-            WHERE (tabla_afectada = 'planes' AND accion = 'cambio_precio_plan')
+            WHERE (tabla_afectada = 'planes' AND accion IN (
+                    'crear_plan',
+                    'actualizar_plan',
+                    'cambio_precio_plan',
+                    'cambiar_estado_plan'
+               ))
                OR (tabla_afectada = 'cupones' AND accion IN (
                     'crear_cupon',
                     'actualizar_cupon',
