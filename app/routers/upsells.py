@@ -87,7 +87,7 @@ def crear_upsell_seguro(
                 FROM suscripciones s
                 JOIN planes p ON p.id = s.plan_id
                 WHERE s.usuario_id = :usuario_id
-                  AND s.estado IN ('activa', 'cancelacion_programada')
+                  AND s.estado IN ('activa', 'cancelacion_programada', 'pendiente_pago')
                 ORDER BY COALESCE(s.fecha_vencimiento, s.created_at) DESC, s.created_at DESC
                 LIMIT 1
                 """
@@ -96,7 +96,7 @@ def crear_upsell_seguro(
         ).fetchone()
 
         if not suscripcion:
-            raise HTTPException(status_code=400, detail="Necesitas un plan activo para solicitar el seguro medico")
+            raise HTTPException(status_code=400, detail="Necesitas una suscripcion iniciada para solicitar el seguro medico")
 
         precio = _precio_seguro(suscripcion.max_beneficiarios, suscripcion.tipo)
 
