@@ -32,12 +32,37 @@ def _precio_seguro(max_beneficiarios: int | None, tipo_plan: str | None) -> floa
     return 10000.0
 
 
+def _ensure_upsells_table(db: Session) -> None:
+    db.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS upsells_seguro (
+                id SERIAL PRIMARY KEY,
+                usuario_id INT NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+                suscripcion_id INT NOT NULL REFERENCES suscripciones(id) ON DELETE CASCADE,
+                plan_nombre VARCHAR(120) NOT NULL,
+                precio_ofertado NUMERIC(12,2) NOT NULL,
+                estado VARCHAR(30) NOT NULL DEFAULT 'nuevo',
+                nota_admin TEXT,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            )
+            """
+        )
+    )
+    db.execute(text("CREATE INDEX IF NOT EXISTS idx_upsells_seguro_estado ON upsells_seguro(estado)"))
+    db.execute(text("CREATE INDEX IF NOT EXISTS idx_upsells_seguro_usuario ON upsells_seguro(usuario_id)"))
+    db.execute(text("CREATE INDEX IF NOT EXISTS idx_upsells_seguro_suscripcion ON upsells_seguro(suscripcion_id)"))
+    db.commit()
+
+
 @router.get("/seguro/mio")
 def mi_upsell_seguro(
     db: Session = Depends(get_db),
     usuario_id: int = Depends(get_current_user),
 ):
     try:
+        _ensure_upsells_table(db)
         row = db.execute(
             text(
                 """
@@ -80,6 +105,7 @@ def crear_upsell_seguro(
     usuario_id: int = Depends(get_current_user),
 ):
     try:
+        _ensure_upsells_table(db)
         suscripcion = db.execute(
             text(
                 """
@@ -181,6 +207,7 @@ def listar_upsells_seguro(
     _: int = Depends(require_admin),
 ):
     try:
+        _ensure_upsells_table(db)
         if estado and estado not in ESTADOS_UPSELL_SEGURO:
             raise HTTPException(status_code=400, detail="Estado de upsell invalido")
 
@@ -233,6 +260,7 @@ def actualizar_upsell_seguro(
     _: int = Depends(require_admin),
 ):
     try:
+        _ensure_upsells_table(db)
         if datos.estado not in ESTADOS_UPSELL_SEGURO:
             raise HTTPException(status_code=400, detail="Estado de upsell invalido")
 
