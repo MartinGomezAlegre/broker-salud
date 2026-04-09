@@ -27,6 +27,21 @@ def _normalizar_max_beneficiarios(tipo_plan: str | None, max_beneficiarios: int 
     return max_beneficiarios
 
 
+def _ensure_fecha_vencimiento(db: Session) -> None:
+    db.execute(text("ALTER TABLE suscripciones ADD COLUMN IF NOT EXISTS fecha_vencimiento DATE"))
+    db.execute(
+        text(
+            """
+            UPDATE suscripciones
+            SET fecha_vencimiento = fecha_inicio + INTERVAL '30 days'
+            WHERE fecha_vencimiento IS NULL
+              AND fecha_inicio IS NOT NULL
+            """
+        )
+    )
+    db.commit()
+
+
 @router.post("", response_model=SuscripcionRespuesta)
 def contratar_plan(
     datos: SuscripcionCrear,
@@ -34,6 +49,7 @@ def contratar_plan(
     usuario_id: int = Depends(get_current_user),
 ):
     try:
+        _ensure_fecha_vencimiento(db)
         plan = db.execute(
             text(
                 """
@@ -186,6 +202,7 @@ def mi_suscripcion(
     usuario_id: int = Depends(get_current_user),
 ):
     try:
+        _ensure_fecha_vencimiento(db)
         suscripcion = db.execute(
             text(
                 """
@@ -263,10 +280,11 @@ def cancelar_mi_suscripcion(
     usuario_id: int = Depends(get_current_user),
 ):
     try:
+        _ensure_fecha_vencimiento(db)
         suscripcion = db.execute(
             text(
                 """
-                SELECT id, estado, fecha_vencimiento
+                SELECT id, estado, fecha_inicio, fecha_vencimiento
                 FROM suscripciones
                 WHERE usuario_id = :usuario_id
                   AND estado NOT IN ('cancelada', 'vencida')
@@ -284,6 +302,15 @@ def cancelar_mi_suscripcion(
             raise HTTPException(status_code=400, detail="La baja ya fue programada para el cierre del ciclo actual")
 
         nuevo_estado = "cancelada" if suscripcion.estado == "pendiente_pago" else "cancelacion_programada"
+        fecha_vencimiento = suscripcion.fecha_vencimiento
+        if nuevo_estado == "cancelacion_programada" and fecha_vencimiento is None:
+            fecha_base = suscripcion.fecha_inicio or date.today()
+            fecha_vencimiento = fecha_base + timedelta(days=30)
+            db.execute(
+                text("UPDATE suscripciones SET fecha_vencimiento = :fv WHERE id = :id"),
+                {"fv": fecha_vencimiento, "id": suscripcion.id},
+            )
+
         db.execute(
             text("UPDATE suscripciones SET estado = :estado WHERE id = :id"),
             {"estado": nuevo_estado, "id": suscripcion.id},
@@ -296,7 +323,7 @@ def cancelar_mi_suscripcion(
         return {
             "ok": True,
             "mensaje": "La baja fue programada. Mantendras el acceso hasta el fin de tu suscripcion actual.",
-            "fecha_vencimiento": suscripcion.fecha_vencimiento.isoformat() if suscripcion.fecha_vencimiento else None,
+            "fecha_vencimiento": fecha_vencimiento.isoformat() if fecha_vencimiento else None,
         }
     except HTTPException:
         raise
