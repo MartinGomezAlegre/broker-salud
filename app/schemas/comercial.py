@@ -16,6 +16,8 @@ class BrokerCrear(BaseModel):
     comision_valor: float = Field(gt=0)
     estado: EstadoComercial = "activo"
     usuario_id: int | None = None
+    access_email: str | None = Field(default=None, max_length=180)
+    access_password: str | None = Field(default=None, min_length=8, max_length=120)
 
 
 class BrokerActualizar(BaseModel):
@@ -25,6 +27,8 @@ class BrokerActualizar(BaseModel):
     comision_valor: float | None = Field(default=None, gt=0)
     estado: EstadoComercial | None = None
     usuario_id: int | None = None
+    access_email: str | None = Field(default=None, max_length=180)
+    access_password: str | None = Field(default=None, min_length=8, max_length=120)
 
 
 class BrokerSellerCrear(BaseModel):
@@ -53,6 +57,8 @@ class DirectSellerCrear(BaseModel):
     comision_valor: float = Field(gt=0)
     estado: EstadoComercial = "activo"
     usuario_id: int | None = None
+    access_email: str | None = Field(default=None, max_length=180)
+    access_password: str | None = Field(default=None, min_length=8, max_length=120)
 
 
 class DirectSellerActualizar(BaseModel):
@@ -63,6 +69,24 @@ class DirectSellerActualizar(BaseModel):
     comision_valor: float | None = Field(default=None, gt=0)
     estado: EstadoComercial | None = None
     usuario_id: int | None = None
+    access_email: str | None = Field(default=None, max_length=180)
+    access_password: str | None = Field(default=None, min_length=8, max_length=120)
+
+
+class BrokerPortalSellerCrear(BaseModel):
+    nombre: str = Field(min_length=2, max_length=120)
+    email: str = Field(min_length=5, max_length=180)
+    contrasenia: str = Field(min_length=8, max_length=120)
+    referral_code: str | None = Field(default=None, max_length=40)
+    estado: EstadoComercial = "activo"
+
+
+class BrokerPortalSellerActualizar(BaseModel):
+    nombre: str | None = Field(default=None, min_length=2, max_length=120)
+    email: str | None = Field(default=None, min_length=5, max_length=180)
+    nueva_contrasenia: str | None = Field(default=None, min_length=8, max_length=120)
+    referral_code: str | None = Field(default=None, max_length=40)
+    estado: EstadoComercial | None = None
 
 
 class LiquidacionCrear(BaseModel):

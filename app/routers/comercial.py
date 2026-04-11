@@ -6,11 +6,18 @@ from app.routers.admin_common import require_admin, require_roles
 from app.schemas.comercial import (
     BrokerActualizar,
     BrokerCrear,
+    BrokerPortalSellerActualizar,
+    BrokerPortalSellerCrear,
     BrokerSellerActualizar,
     BrokerSellerCrear,
     DirectSellerActualizar,
     DirectSellerCrear,
     LiquidacionCrear,
+)
+from app.services.comercial.broker_team import (
+    actualizar_broker_seller_desde_broker,
+    crear_broker_seller_desde_broker,
+    listar_mi_equipo_broker,
 )
 from app.services.comercial.admin import (
     actualizar_broker,
@@ -40,6 +47,50 @@ def dashboard_comercial_route(
     usuario_id: int = Depends(require_roles("broker", "direct_seller", "broker_seller")),
 ):
     return dashboard_comercial(db, usuario_id)
+
+
+@router.get("/broker-sellers")
+def listar_mi_equipo_broker_route(
+    db: Session = Depends(get_db),
+    usuario_id: int = Depends(require_roles("broker")),
+):
+    return listar_mi_equipo_broker(db, usuario_id)
+
+
+@router.post("/broker-sellers")
+def crear_broker_seller_desde_broker_route(
+    datos: BrokerPortalSellerCrear,
+    db: Session = Depends(get_db),
+    usuario_id: int = Depends(require_roles("broker")),
+):
+    return crear_broker_seller_desde_broker(
+        db,
+        usuario_id,
+        nombre=datos.nombre,
+        email=datos.email,
+        contrasenia=datos.contrasenia,
+        referral_code=datos.referral_code,
+        estado=datos.estado,
+    )
+
+
+@router.put("/broker-sellers/{seller_id}")
+def actualizar_broker_seller_desde_broker_route(
+    seller_id: int,
+    datos: BrokerPortalSellerActualizar,
+    db: Session = Depends(get_db),
+    usuario_id: int = Depends(require_roles("broker")),
+):
+    return actualizar_broker_seller_desde_broker(
+        db,
+        usuario_id,
+        seller_id,
+        nombre=datos.nombre,
+        email=datos.email,
+        nueva_contrasenia=datos.nueva_contrasenia,
+        referral_code=datos.referral_code,
+        estado=datos.estado,
+    )
 
 
 @admin_router.get("/resumen")

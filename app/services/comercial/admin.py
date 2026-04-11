@@ -13,6 +13,7 @@ from app.schemas.comercial import (
     DirectSellerCrear,
     LiquidacionCrear,
 )
+from app.services.comercial.accounts import create_commercial_user, update_commercial_user
 from app.services.comercial.common import (
     COMMISSIONABLE_STATES,
     compute_commission_sql,
@@ -229,15 +230,28 @@ def listar_brokers(db: Session, estado: str | None, buscar: str | None):
 def crear_broker(db: Session, datos: BrokerCrear):
     try:
         ensure_commercial_schema(db)
-        if datos.usuario_id is not None:
-            _ensure_usuario_assignable(db, datos.usuario_id, "broker")
+        usuario_id = _resolve_admin_access_for_create(
+            db,
+            target_role="broker",
+            full_name=datos.nombre,
+            usuario_id=datos.usuario_id,
+            access_email=datos.access_email,
+            access_password=datos.access_password,
+        )
         row = db.execute(text("""
             INSERT INTO brokers (nombre, contacto, comision_tipo, comision_valor, estado, fecha_alta, usuario_id)
             VALUES (:nombre, :contacto, :comision_tipo, :comision_valor, :estado, NOW(), :usuario_id)
             RETURNING id
-        """), datos.model_dump()).fetchone()
-        if datos.usuario_id is not None:
-            _set_usuario_role(db, datos.usuario_id, "broker")
+        """), {
+            "nombre": datos.nombre,
+            "contacto": datos.contacto,
+            "comision_tipo": datos.comision_tipo,
+            "comision_valor": datos.comision_valor,
+            "estado": datos.estado,
+            "usuario_id": usuario_id,
+        }).fetchone()
+        if usuario_id is not None:
+            _set_usuario_role(db, usuario_id, "broker")
         db.commit()
         return obtener_broker(db, row.id)
     except HTTPException:
@@ -254,16 +268,30 @@ def actualizar_broker(db: Session, broker_id: int, datos: BrokerActualizar):
         if not actual:
             raise HTTPException(status_code=404, detail="Broker no encontrado")
 
-        payload = datos.model_dump(exclude_unset=True)
+        incoming = datos.model_dump(exclude_unset=True)
+        payload = dict(incoming)
         previous_usuario_id = actual.usuario_id
-        if "usuario_id" in payload and payload["usuario_id"] is not None:
-            _ensure_usuario_assignable(db, payload["usuario_id"], "broker", "brokers", broker_id)
-        if payload:
-            set_clause = ", ".join(f"{field} = :{field}" for field in payload)
-            db.execute(
-                text(f"UPDATE brokers SET {set_clause} WHERE id = :id"),
-                {"id": broker_id, **payload},
-            )
+        next_usuario_id = _resolve_admin_access_for_update(
+            db,
+            target_role="broker",
+            full_name=payload.get("nombre") or obtener_broker(db, broker_id)["nombre"],
+            current_usuario_id=actual.usuario_id,
+            usuario_id=payload.pop("usuario_id", None) if "usuario_id" in payload else None,
+            access_email=payload.pop("access_email", None) if "access_email" in payload else None,
+            access_password=payload.pop("access_password", None) if "access_password" in payload else None,
+            current_table="brokers",
+            current_id=broker_id,
+        )
+        touched_access = any(field in incoming for field in ("usuario_id", "access_email", "access_password"))
+        if "usuario_id" in incoming or next_usuario_id != actual.usuario_id:
+            payload["usuario_id"] = next_usuario_id
+        if payload or touched_access:
+            if payload:
+                set_clause = ", ".join(f"{field} = :{field}" for field in payload)
+                db.execute(
+                    text(f"UPDATE brokers SET {set_clause} WHERE id = :id"),
+                    {"id": broker_id, **payload},
+                )
             if "usuario_id" in payload:
                 if payload["usuario_id"] is not None:
                     _set_usuario_role(db, payload["usuario_id"], "broker")
@@ -394,7 +422,6 @@ def actualizar_broker_seller(db: Session, seller_id: int, datos: BrokerSellerAct
                 if previous_usuario_id and previous_usuario_id != payload["usuario_id"]:
                     _clear_usuario_role_if_unlinked(db, previous_usuario_id, "broker_seller")
             db.commit()
-
         return obtener_broker_seller(db, seller_id)
     except HTTPException:
         raise
@@ -482,14 +509,27 @@ def listar_direct_sellers(db: Session, estado: str | None, buscar: str | None):
 def crear_direct_seller(db: Session, datos: DirectSellerCrear):
     try:
         ensure_commercial_schema(db)
-        if datos.usuario_id is not None:
-            _ensure_usuario_assignable(db, datos.usuario_id, "direct_seller")
+        usuario_id = _resolve_admin_access_for_create(
+            db,
+            target_role="direct_seller",
+            full_name=datos.nombre,
+            usuario_id=datos.usuario_id,
+            access_email=datos.access_email,
+            access_password=datos.access_password,
+        )
         referral_code = datos.referral_code or generate_referral_code(db, datos.nombre)
         if referral_code_exists(db, referral_code):
             raise HTTPException(status_code=400, detail="El referral code ya esta en uso")
 
-        params = datos.model_dump()
-        params["referral_code"] = referral_code
+        params = {
+            "nombre": datos.nombre,
+            "email": datos.email,
+            "referral_code": referral_code,
+            "comision_tipo": datos.comision_tipo,
+            "comision_valor": datos.comision_valor,
+            "estado": datos.estado,
+            "usuario_id": usuario_id,
+        }
         row = db.execute(text("""
             INSERT INTO direct_sellers
                 (nombre, email, referral_code, comision_tipo, comision_valor, estado, fecha_alta, usuario_id)
@@ -497,8 +537,8 @@ def crear_direct_seller(db: Session, datos: DirectSellerCrear):
                 (:nombre, :email, :referral_code, :comision_tipo, :comision_valor, :estado, NOW(), :usuario_id)
             RETURNING id
         """), params).fetchone()
-        if datos.usuario_id is not None:
-            _set_usuario_role(db, datos.usuario_id, "direct_seller")
+        if usuario_id is not None:
+            _set_usuario_role(db, usuario_id, "direct_seller")
         db.commit()
         return obtener_direct_seller(db, row.id)
     except HTTPException:
@@ -521,20 +561,33 @@ def actualizar_direct_seller(db: Session, seller_id: int, datos: DirectSellerAct
 
         payload = datos.model_dump(exclude_unset=True)
         previous_usuario_id = actual.usuario_id
-        if "usuario_id" in payload and payload["usuario_id"] is not None:
-            _ensure_usuario_assignable(db, payload["usuario_id"], "direct_seller", "direct_sellers", seller_id)
+        next_usuario_id = _resolve_admin_access_for_update(
+            db,
+            target_role="direct_seller",
+            full_name=payload.get("nombre") or obtener_direct_seller(db, seller_id)["nombre"],
+            current_usuario_id=actual.usuario_id,
+            usuario_id=payload.pop("usuario_id", None) if "usuario_id" in payload else None,
+            access_email=payload.pop("access_email", None) if "access_email" in payload else None,
+            access_password=payload.pop("access_password", None) if "access_password" in payload else None,
+            current_table="direct_sellers",
+            current_id=seller_id,
+        )
+        touched_access = any(field in payload or field in datos.model_dump(exclude_unset=True) for field in ("usuario_id", "access_email", "access_password"))
+        if "usuario_id" in datos.model_dump(exclude_unset=True) or next_usuario_id != actual.usuario_id:
+            payload["usuario_id"] = next_usuario_id
         if "referral_code" in payload:
             referral_code = payload["referral_code"] or generate_referral_code(db, payload.get("nombre") or actual.referral_code)
             if referral_code_exists(db, referral_code, exclude_table="direct_sellers", exclude_id=seller_id):
                 raise HTTPException(status_code=400, detail="El referral code ya esta en uso")
             payload["referral_code"] = referral_code
 
-        if payload:
+        if payload or touched_access:
             set_clause = ", ".join(f"{field} = :{field}" for field in payload)
-            db.execute(
-                text(f"UPDATE direct_sellers SET {set_clause} WHERE id = :id"),
-                {"id": seller_id, **payload},
-            )
+            if payload:
+                db.execute(
+                    text(f"UPDATE direct_sellers SET {set_clause} WHERE id = :id"),
+                    {"id": seller_id, **payload},
+                )
             if "usuario_id" in payload:
                 if payload["usuario_id"] is not None:
                     _set_usuario_role(db, payload["usuario_id"], "direct_seller")
@@ -763,6 +816,83 @@ def _ensure_destinatario_exists(db: Session, destinatario_tipo: str, destinatari
         raise HTTPException(status_code=404, detail="Destinatario no encontrado")
 
 
+def _resolve_admin_access_for_create(
+    db: Session,
+    *,
+    target_role: str,
+    full_name: str,
+    usuario_id: int | None,
+    access_email: str | None,
+    access_password: str | None,
+) -> int | None:
+    if usuario_id is not None:
+        _ensure_usuario_assignable(db, usuario_id, target_role)
+        return usuario_id
+
+    if access_email and access_password:
+        return create_commercial_user(
+            db,
+            full_name=full_name,
+            email=access_email,
+            password=access_password,
+            role=target_role,
+        )
+
+    if access_email or access_password:
+        raise HTTPException(
+            status_code=400,
+            detail="Para crear un acceso comercial nuevo necesitamos email y contrasena inicial",
+        )
+
+    return None
+
+
+def _resolve_admin_access_for_update(
+    db: Session,
+    *,
+    target_role: str,
+    full_name: str,
+    current_usuario_id: int | None,
+    usuario_id: int | None,
+    access_email: str | None,
+    access_password: str | None,
+    current_table: str,
+    current_id: int,
+) -> int | None:
+    if usuario_id is not None:
+        _ensure_usuario_assignable(db, usuario_id, target_role, current_table, current_id)
+        return usuario_id
+
+    if access_email or access_password:
+        if current_usuario_id:
+            current_email = _get_usuario_email(db, current_usuario_id)
+            update_commercial_user(
+                db,
+                usuario_id=current_usuario_id,
+                full_name=full_name,
+                email=access_email or current_email,
+                password=access_password,
+                role=target_role,
+            )
+            return current_usuario_id
+
+        if access_email and access_password:
+            return create_commercial_user(
+                db,
+                full_name=full_name,
+                email=access_email,
+                password=access_password,
+                role=target_role,
+            )
+
+        raise HTTPException(
+            status_code=400,
+            detail="Para crear un nuevo acceso comercial necesitamos email y contrasena inicial",
+        )
+
+    return current_usuario_id
+
+
 def _ensure_usuario_assignable(
     db: Session,
     usuario_id: int,
@@ -830,6 +960,16 @@ def _clear_usuario_role_if_unlinked(db: Session, usuario_id: int, expected_role:
         WHERE id = :usuario_id
           AND rol = :expected_role
     """), {"usuario_id": usuario_id, "expected_role": expected_role})
+
+
+def _get_usuario_email(db: Session, usuario_id: int) -> str:
+    row = db.execute(
+        text("SELECT email FROM usuarios WHERE id = :id"),
+        {"id": usuario_id},
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Usuario comercial no encontrado")
+    return row.email
 
 
 def _serialize_broker_seller(row) -> dict:
