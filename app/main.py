@@ -64,6 +64,7 @@ app.include_router(upsells.router)
 app.include_router(upsells.admin_router)
 app.include_router(credenciales.router)
 app.include_router(credenciales.public_router)
+app.include_router(comercial.router)
 app.include_router(comercial.admin_router)
 
 @app.get("/health")

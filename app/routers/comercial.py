@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.routers.admin_common import require_admin
+from app.routers.admin_common import require_admin, require_roles
 from app.schemas.comercial import (
     BrokerActualizar,
     BrokerCrear,
@@ -24,11 +24,22 @@ from app.services.comercial.admin import (
     listar_brokers,
     listar_direct_sellers,
     listar_liquidaciones,
+    listar_usuarios_comerciales,
     listar_ventas_referidas,
     resumen_comercial,
 )
+from app.services.comercial.portal import dashboard_comercial
 
+router = APIRouter(prefix="/comercial", tags=["comercial"])
 admin_router = APIRouter(prefix="/admin/comercial", tags=["admin-comercial"])
+
+
+@router.get("/dashboard")
+def dashboard_comercial_route(
+    db: Session = Depends(get_db),
+    usuario_id: int = Depends(require_roles("broker", "direct_seller", "broker_seller")),
+):
+    return dashboard_comercial(db, usuario_id)
 
 
 @admin_router.get("/resumen")
@@ -37,6 +48,15 @@ def resumen_comercial_route(
     _: int = Depends(require_admin),
 ):
     return resumen_comercial(db)
+
+
+@admin_router.get("/usuarios")
+def listar_usuarios_comerciales_route(
+    buscar: str | None = Query(None),
+    db: Session = Depends(get_db),
+    _: int = Depends(require_admin),
+):
+    return listar_usuarios_comerciales(db, buscar)
 
 
 @admin_router.get("/brokers")

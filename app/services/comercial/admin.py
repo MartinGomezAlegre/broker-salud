@@ -82,6 +82,59 @@ def resumen_comercial(db: Session):
         raise HTTPException(status_code=500, detail="No pudimos cargar el resumen comercial")
 
 
+def listar_usuarios_comerciales(
+    db: Session,
+    buscar: str | None,
+):
+    try:
+        ensure_commercial_schema(db)
+        params: dict = {}
+        filtro = ""
+
+        if buscar:
+            filtro = """
+                AND (
+                    u.nombre ILIKE :buscar OR
+                    u.apellido ILIKE :buscar OR
+                    u.email ILIKE :buscar
+                )
+            """
+            params["buscar"] = f"%{buscar}%"
+
+        rows = db.execute(text(f"""
+            SELECT
+                u.id,
+                u.nombre,
+                u.apellido,
+                u.email,
+                u.rol,
+                u.activo
+            FROM usuarios u
+            WHERE u.activo = true
+              AND COALESCE(u.rol, 'cliente') <> 'admin'
+            {filtro}
+            ORDER BY u.nombre ASC, u.apellido ASC, u.email ASC
+            LIMIT 100
+        """), params).fetchall()
+
+        return [
+            {
+                "id": row.id,
+                "nombre": row.nombre,
+                "apellido": row.apellido,
+                "email": row.email,
+                "rol": row.rol,
+                "activo": row.activo,
+            }
+            for row in rows
+        ]
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Error en listar_usuarios_comerciales: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail="No pudimos cargar usuarios disponibles")
+
+
 def listar_brokers(db: Session, estado: str | None, buscar: str | None):
     try:
         ensure_commercial_schema(db)
@@ -106,6 +159,9 @@ def listar_brokers(db: Session, estado: str | None, buscar: str | None):
                 b.estado,
                 b.fecha_alta,
                 b.usuario_id,
+                u.nombre AS usuario_nombre,
+                u.apellido AS usuario_apellido,
+                u.email AS usuario_email,
                 COALESCE(sellers.total_sellers, 0) AS total_sellers,
                 COALESCE(sellers.active_sellers, 0) AS active_sellers,
                 COALESCE(sales.ventas_asociadas, 0) AS ventas_asociadas,
@@ -113,6 +169,7 @@ def listar_brokers(db: Session, estado: str | None, buscar: str | None):
                 COALESCE(sales.comision_acumulada, 0) AS comision_acumulada,
                 COALESCE(liq.total_liquidado, 0) AS total_liquidado
             FROM brokers b
+            LEFT JOIN usuarios u ON u.id = b.usuario_id
             LEFT JOIN LATERAL (
                 SELECT
                     COUNT(*) AS total_sellers,
@@ -150,6 +207,8 @@ def listar_brokers(db: Session, estado: str | None, buscar: str | None):
                 "estado": row.estado,
                 "fecha_alta": row.fecha_alta.isoformat() if row.fecha_alta else None,
                 "usuario_id": row.usuario_id,
+                "usuario_nombre": _full_name(row.usuario_nombre, row.usuario_apellido),
+                "usuario_email": row.usuario_email,
                 "total_sellers": row.total_sellers,
                 "active_sellers": row.active_sellers,
                 "ventas_asociadas": row.ventas_asociadas,
@@ -170,11 +229,15 @@ def listar_brokers(db: Session, estado: str | None, buscar: str | None):
 def crear_broker(db: Session, datos: BrokerCrear):
     try:
         ensure_commercial_schema(db)
+        if datos.usuario_id is not None:
+            _ensure_usuario_assignable(db, datos.usuario_id, "broker")
         row = db.execute(text("""
             INSERT INTO brokers (nombre, contacto, comision_tipo, comision_valor, estado, fecha_alta, usuario_id)
             VALUES (:nombre, :contacto, :comision_tipo, :comision_valor, :estado, NOW(), :usuario_id)
             RETURNING id
         """), datos.model_dump()).fetchone()
+        if datos.usuario_id is not None:
+            _set_usuario_role(db, datos.usuario_id, "broker")
         db.commit()
         return obtener_broker(db, row.id)
     except HTTPException:
@@ -187,17 +250,25 @@ def crear_broker(db: Session, datos: BrokerCrear):
 def actualizar_broker(db: Session, broker_id: int, datos: BrokerActualizar):
     try:
         ensure_commercial_schema(db)
-        actual = db.execute(text("SELECT id FROM brokers WHERE id = :id"), {"id": broker_id}).fetchone()
+        actual = db.execute(text("SELECT id, usuario_id FROM brokers WHERE id = :id"), {"id": broker_id}).fetchone()
         if not actual:
             raise HTTPException(status_code=404, detail="Broker no encontrado")
 
         payload = datos.model_dump(exclude_unset=True)
+        previous_usuario_id = actual.usuario_id
+        if "usuario_id" in payload and payload["usuario_id"] is not None:
+            _ensure_usuario_assignable(db, payload["usuario_id"], "broker", "brokers", broker_id)
         if payload:
             set_clause = ", ".join(f"{field} = :{field}" for field in payload)
             db.execute(
                 text(f"UPDATE brokers SET {set_clause} WHERE id = :id"),
                 {"id": broker_id, **payload},
             )
+            if "usuario_id" in payload:
+                if payload["usuario_id"] is not None:
+                    _set_usuario_role(db, payload["usuario_id"], "broker")
+                if previous_usuario_id and previous_usuario_id != payload["usuario_id"]:
+                    _clear_usuario_role_if_unlinked(db, previous_usuario_id, "broker")
             db.commit()
         return obtener_broker(db, broker_id)
     except HTTPException:
@@ -235,15 +306,19 @@ def listar_broker_sellers(db: Session, broker_id: int | None, estado: str | None
                 bs.estado,
                 bs.fecha_alta,
                 bs.usuario_id,
+                u.nombre AS usuario_nombre,
+                u.apellido AS usuario_apellido,
+                u.email AS usuario_email,
                 COALESCE(COUNT(s.id), 0) AS ventas_asociadas,
                 COALESCE(SUM(s.precio_pagado), 0) AS revenue_generado
             FROM broker_sellers bs
             JOIN brokers b ON b.id = bs.broker_id
+            LEFT JOIN usuarios u ON u.id = bs.usuario_id
             LEFT JOIN suscripciones s
                 ON s.broker_seller_id = bs.id
                AND s.estado = ANY(:states)
             WHERE {where}
-            GROUP BY bs.id, b.nombre
+            GROUP BY bs.id, b.nombre, u.nombre, u.apellido, u.email
             ORDER BY bs.fecha_alta DESC, bs.id DESC
         """), params).fetchall()
 
@@ -259,6 +334,8 @@ def crear_broker_seller(db: Session, datos: BrokerSellerCrear):
     try:
         ensure_commercial_schema(db)
         _ensure_broker_exists(db, datos.broker_id)
+        if datos.usuario_id is not None:
+            _ensure_usuario_assignable(db, datos.usuario_id, "broker_seller")
         referral_code = datos.referral_code or generate_referral_code(db, datos.nombre)
         if referral_code_exists(db, referral_code):
             raise HTTPException(status_code=400, detail="El referral code ya esta en uso")
@@ -271,6 +348,8 @@ def crear_broker_seller(db: Session, datos: BrokerSellerCrear):
             VALUES (:broker_id, :nombre, :email, :referral_code, :estado, NOW(), :usuario_id)
             RETURNING id
         """), params).fetchone()
+        if datos.usuario_id is not None:
+            _set_usuario_role(db, datos.usuario_id, "broker_seller")
         db.commit()
         return obtener_broker_seller(db, row.id)
     except HTTPException:
@@ -284,7 +363,7 @@ def actualizar_broker_seller(db: Session, seller_id: int, datos: BrokerSellerAct
     try:
         ensure_commercial_schema(db)
         actual = db.execute(text("""
-            SELECT id, referral_code
+            SELECT id, referral_code, usuario_id
             FROM broker_sellers
             WHERE id = :id
         """), {"id": seller_id}).fetchone()
@@ -292,8 +371,11 @@ def actualizar_broker_seller(db: Session, seller_id: int, datos: BrokerSellerAct
             raise HTTPException(status_code=404, detail="Vendedor de broker no encontrado")
 
         payload = datos.model_dump(exclude_unset=True)
+        previous_usuario_id = actual.usuario_id
         if "broker_id" in payload and payload["broker_id"] is not None:
             _ensure_broker_exists(db, payload["broker_id"])
+        if "usuario_id" in payload and payload["usuario_id"] is not None:
+            _ensure_usuario_assignable(db, payload["usuario_id"], "broker_seller", "broker_sellers", seller_id)
         if "referral_code" in payload:
             referral_code = payload["referral_code"] or generate_referral_code(db, payload.get("nombre") or actual.referral_code)
             if referral_code_exists(db, referral_code, exclude_table="broker_sellers", exclude_id=seller_id):
@@ -306,6 +388,11 @@ def actualizar_broker_seller(db: Session, seller_id: int, datos: BrokerSellerAct
                 text(f"UPDATE broker_sellers SET {set_clause} WHERE id = :id"),
                 {"id": seller_id, **payload},
             )
+            if "usuario_id" in payload:
+                if payload["usuario_id"] is not None:
+                    _set_usuario_role(db, payload["usuario_id"], "broker_seller")
+                if previous_usuario_id and previous_usuario_id != payload["usuario_id"]:
+                    _clear_usuario_role_if_unlinked(db, previous_usuario_id, "broker_seller")
             db.commit()
 
         return obtener_broker_seller(db, seller_id)
@@ -341,11 +428,15 @@ def listar_direct_sellers(db: Session, estado: str | None, buscar: str | None):
                 ds.estado,
                 ds.fecha_alta,
                 ds.usuario_id,
+                u.nombre AS usuario_nombre,
+                u.apellido AS usuario_apellido,
+                u.email AS usuario_email,
                 COALESCE(COUNT(s.id), 0) AS ventas_asociadas,
                 COALESCE(SUM(s.precio_pagado), 0) AS revenue_generado,
                 COALESCE(SUM({DIRECT_COMMISSION_SQL}), 0) AS comision_acumulada,
                 COALESCE(liq.total_liquidado, 0) AS total_liquidado
             FROM direct_sellers ds
+            LEFT JOIN usuarios u ON u.id = ds.usuario_id
             LEFT JOIN suscripciones s
                 ON s.direct_seller_id = ds.id
                AND s.estado = ANY(:states)
@@ -356,7 +447,7 @@ def listar_direct_sellers(db: Session, estado: str | None, buscar: str | None):
                   AND cl.destinatario_id = ds.id
             ) liq ON true
             WHERE {where}
-            GROUP BY ds.id, liq.total_liquidado
+            GROUP BY ds.id, liq.total_liquidado, u.nombre, u.apellido, u.email
             ORDER BY ds.fecha_alta DESC, ds.id DESC
         """), params).fetchall()
 
@@ -371,6 +462,8 @@ def listar_direct_sellers(db: Session, estado: str | None, buscar: str | None):
                 "estado": row.estado,
                 "fecha_alta": row.fecha_alta.isoformat() if row.fecha_alta else None,
                 "usuario_id": row.usuario_id,
+                "usuario_nombre": _full_name(row.usuario_nombre, row.usuario_apellido),
+                "usuario_email": row.usuario_email,
                 "ventas_asociadas": row.ventas_asociadas,
                 "revenue_generado": float(row.revenue_generado or 0),
                 "comision_acumulada": float(row.comision_acumulada or 0),
@@ -389,6 +482,8 @@ def listar_direct_sellers(db: Session, estado: str | None, buscar: str | None):
 def crear_direct_seller(db: Session, datos: DirectSellerCrear):
     try:
         ensure_commercial_schema(db)
+        if datos.usuario_id is not None:
+            _ensure_usuario_assignable(db, datos.usuario_id, "direct_seller")
         referral_code = datos.referral_code or generate_referral_code(db, datos.nombre)
         if referral_code_exists(db, referral_code):
             raise HTTPException(status_code=400, detail="El referral code ya esta en uso")
@@ -402,6 +497,8 @@ def crear_direct_seller(db: Session, datos: DirectSellerCrear):
                 (:nombre, :email, :referral_code, :comision_tipo, :comision_valor, :estado, NOW(), :usuario_id)
             RETURNING id
         """), params).fetchone()
+        if datos.usuario_id is not None:
+            _set_usuario_role(db, datos.usuario_id, "direct_seller")
         db.commit()
         return obtener_direct_seller(db, row.id)
     except HTTPException:
@@ -415,7 +512,7 @@ def actualizar_direct_seller(db: Session, seller_id: int, datos: DirectSellerAct
     try:
         ensure_commercial_schema(db)
         actual = db.execute(text("""
-            SELECT id, referral_code
+            SELECT id, referral_code, usuario_id
             FROM direct_sellers
             WHERE id = :id
         """), {"id": seller_id}).fetchone()
@@ -423,6 +520,9 @@ def actualizar_direct_seller(db: Session, seller_id: int, datos: DirectSellerAct
             raise HTTPException(status_code=404, detail="Vendedor directo no encontrado")
 
         payload = datos.model_dump(exclude_unset=True)
+        previous_usuario_id = actual.usuario_id
+        if "usuario_id" in payload and payload["usuario_id"] is not None:
+            _ensure_usuario_assignable(db, payload["usuario_id"], "direct_seller", "direct_sellers", seller_id)
         if "referral_code" in payload:
             referral_code = payload["referral_code"] or generate_referral_code(db, payload.get("nombre") or actual.referral_code)
             if referral_code_exists(db, referral_code, exclude_table="direct_sellers", exclude_id=seller_id):
@@ -435,6 +535,11 @@ def actualizar_direct_seller(db: Session, seller_id: int, datos: DirectSellerAct
                 text(f"UPDATE direct_sellers SET {set_clause} WHERE id = :id"),
                 {"id": seller_id, **payload},
             )
+            if "usuario_id" in payload:
+                if payload["usuario_id"] is not None:
+                    _set_usuario_role(db, payload["usuario_id"], "direct_seller")
+                if previous_usuario_id and previous_usuario_id != payload["usuario_id"]:
+                    _clear_usuario_role_if_unlinked(db, previous_usuario_id, "direct_seller")
             db.commit()
 
         return obtener_direct_seller(db, seller_id)
@@ -658,6 +763,75 @@ def _ensure_destinatario_exists(db: Session, destinatario_tipo: str, destinatari
         raise HTTPException(status_code=404, detail="Destinatario no encontrado")
 
 
+def _ensure_usuario_assignable(
+    db: Session,
+    usuario_id: int,
+    target_role: str,
+    current_table: str | None = None,
+    current_id: int | None = None,
+):
+    usuario = db.execute(text("""
+        SELECT id, rol, activo
+        FROM usuarios
+        WHERE id = :id
+    """), {"id": usuario_id}).fetchone()
+    if not usuario:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    if not usuario.activo:
+        raise HTTPException(status_code=400, detail="No podes vincular un usuario inactivo")
+
+    for table in ("brokers", "broker_sellers", "direct_sellers"):
+        params: dict = {"usuario_id": usuario_id}
+        sql = f"SELECT id FROM {table} WHERE usuario_id = :usuario_id"
+        if current_table == table and current_id is not None:
+            sql += " AND id <> :current_id"
+            params["current_id"] = current_id
+        row = db.execute(text(sql), params).fetchone()
+        if row:
+            raise HTTPException(
+                status_code=400,
+                detail="Este usuario ya esta vinculado a otro perfil comercial",
+            )
+
+    if usuario.rol == "admin":
+        raise HTTPException(status_code=400, detail="No podes vincular un usuario admin al canal comercial")
+
+    if usuario.rol not in (None, "", "cliente", target_role):
+        raise HTTPException(
+            status_code=400,
+            detail=f"El usuario ya tiene un rol incompatible: {usuario.rol}",
+        )
+
+
+def _set_usuario_role(db: Session, usuario_id: int, role: str):
+    db.execute(
+        text("UPDATE usuarios SET rol = :role WHERE id = :id"),
+        {"role": role, "id": usuario_id},
+    )
+
+
+def _clear_usuario_role_if_unlinked(db: Session, usuario_id: int, expected_role: str):
+    linked = db.execute(text("""
+        SELECT EXISTS (
+            SELECT 1 FROM brokers WHERE usuario_id = :usuario_id
+            UNION ALL
+            SELECT 1 FROM broker_sellers WHERE usuario_id = :usuario_id
+            UNION ALL
+            SELECT 1 FROM direct_sellers WHERE usuario_id = :usuario_id
+        ) AS is_linked
+    """), {"usuario_id": usuario_id}).fetchone()
+
+    if linked and linked.is_linked:
+        return
+
+    db.execute(text("""
+        UPDATE usuarios
+        SET rol = 'cliente'
+        WHERE id = :usuario_id
+          AND rol = :expected_role
+    """), {"usuario_id": usuario_id, "expected_role": expected_role})
+
+
 def _serialize_broker_seller(row) -> dict:
     return {
         "id": row.id,
@@ -669,6 +843,13 @@ def _serialize_broker_seller(row) -> dict:
         "estado": row.estado,
         "fecha_alta": row.fecha_alta.isoformat() if row.fecha_alta else None,
         "usuario_id": row.usuario_id,
+        "usuario_nombre": _full_name(row.usuario_nombre, row.usuario_apellido),
+        "usuario_email": row.usuario_email,
         "ventas_asociadas": row.ventas_asociadas,
         "revenue_generado": float(row.revenue_generado or 0),
     }
+
+
+def _full_name(nombre: str | None, apellido: str | None) -> str | None:
+    parts = [part for part in (nombre, apellido) if part]
+    return " ".join(parts) if parts else None

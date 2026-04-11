@@ -30,6 +30,7 @@ def _perfil_payload(usuario) -> dict:
         "nombre": usuario.nombre,
         "apellido": usuario.apellido,
         "email": usuario.email,
+        "rol": usuario.rol,
         "telefono": usuario.telefono,
         "dni": usuario.dni,
         "fecha_nacimiento": usuario.fecha_nacimiento.isoformat() if usuario.fecha_nacimiento else None,
@@ -119,7 +120,7 @@ def mi_perfil(
         usuario = db.execute(
             text(
                 """
-                SELECT id, nombre, apellido, email, telefono,
+                SELECT id, nombre, apellido, email, rol, telefono,
                        dni, fecha_nacimiento, cuit, direccion,
                        localidad, codigo_postal, provincia, pais, created_at
                 FROM usuarios
@@ -177,7 +178,7 @@ def actualizar_perfil(
         usuario = db.execute(
             text(
                 """
-                SELECT id, nombre, apellido, email, telefono,
+                SELECT id, nombre, apellido, email, rol, telefono,
                        dni, fecha_nacimiento, cuit, direccion,
                        localidad, codigo_postal, provincia, pais, created_at
                 FROM usuarios
