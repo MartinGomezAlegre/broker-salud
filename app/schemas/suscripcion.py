@@ -1,10 +1,11 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional
 from datetime import date
 
 class SuscripcionCrear(BaseModel):
     plan_id: int
-    beneficiarios: List[str] = []
+    beneficiarios: List[str] = Field(default_factory=list)
+    referral_code: Optional[str] = None
 
 class SuscripcionRespuesta(BaseModel):
     id: int

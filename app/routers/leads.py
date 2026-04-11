@@ -1,27 +1,27 @@
 import logging
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy.orm import Session
-from sqlalchemy import text
-from pydantic import BaseModel, EmailStr
 from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel, EmailStr
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
 from app.database import get_db
-from app.auth import get_current_user
 from app.limiter import limiter
+from app.routers.admin_common import require_admin
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/leads",
-    tags=["leads"]
+    tags=["leads"],
 )
 
 admin_router = APIRouter(
     prefix="/admin/leads",
-    tags=["admin-leads"]
+    tags=["admin-leads"],
 )
 
-
-# ── Schemas ────────────────────────────────────────────────────────────────────
 
 class LeadEmpresarialCrear(BaseModel):
     razon_social: Optional[str] = None
@@ -37,46 +37,33 @@ class LeadEmpresarialActualizar(BaseModel):
     nota_admin: Optional[str] = None
 
 
-# ── require_admin local ────────────────────────────────────────────────────────
-
-def _require_admin_dep(
-    db: Session = Depends(get_db),
-    usuario_id: int = Depends(get_current_user)
-):
-    from app.routers.admin import require_admin
-    return require_admin(db=db, usuario_id=usuario_id)
-
-
-# ── Endpoint público ───────────────────────────────────────────────────────────
-
 @router.post("/empresarial")
 @limiter.limit("3/hour")
 def crear_lead_empresarial(
     request: Request,
     datos: LeadEmpresarialCrear,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
+    del request
     try:
-        db.execute(
-            text("""
-                INSERT INTO leads_empresariales
-                    (razon_social, nombre_contacto, email, telefono, cantidad_empleados, mensaje)
-                VALUES
-                    (:razon_social, :nombre_contacto, :email, :telefono, :cantidad_empleados, :mensaje)
-            """),
-            {
-                "razon_social": datos.razon_social,
-                "nombre_contacto": datos.nombre_contacto,
-                "email": str(datos.email),
-                "telefono": datos.telefono,
-                "cantidad_empleados": datos.cantidad_empleados,
-                "mensaje": datos.mensaje,
-            }
-        )
+        db.execute(text("""
+            INSERT INTO leads_empresariales
+                (razon_social, nombre_contacto, email, telefono, cantidad_empleados, mensaje)
+            VALUES
+                (:razon_social, :nombre_contacto, :email, :telefono, :cantidad_empleados, :mensaje)
+        """), {
+            "razon_social": datos.razon_social,
+            "nombre_contacto": datos.nombre_contacto,
+            "email": str(datos.email),
+            "telefono": datos.telefono,
+            "cantidad_empleados": datos.cantidad_empleados,
+            "mensaje": datos.mensaje,
+        })
         db.commit()
 
         try:
             from app.services.email import enviar_email_lead_empresarial
+
             enviar_email_lead_empresarial(
                 datos.nombre_contacto,
                 datos.razon_social,
@@ -85,24 +72,22 @@ def crear_lead_empresarial(
                 datos.cantidad_empleados,
                 datos.mensaje,
             )
-        except Exception as e:
-            logger.error("Error enviando email lead empresarial: %s", e)
+        except Exception as exc:
+            logger.error("Error enviando email lead empresarial: %s", exc)
 
-        return {"message": "Gracias por tu interés. Te contactamos en 24hs."}
+        return {"message": "Gracias por tu interes. Te contactamos en 24hs."}
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error("Error en crear_lead_empresarial: %s", e, exc_info=True)
+    except Exception as exc:
+        logger.error("Error en crear_lead_empresarial: %s", exc, exc_info=True)
         raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
-
-# ── Endpoints de admin ─────────────────────────────────────────────────────────
 
 @admin_router.get("/empresariales")
 def listar_leads(
     estado: Optional[str] = Query(None),
     db: Session = Depends(get_db),
-    _: int = Depends(_require_admin_dep)
+    _: int = Depends(require_admin),
 ):
     try:
         params: dict = {}
@@ -121,23 +106,23 @@ def listar_leads(
 
         return [
             {
-                "id": l.id,
-                "razon_social": l.razon_social,
-                "nombre_contacto": l.nombre_contacto,
-                "email": l.email,
-                "telefono": l.telefono,
-                "cantidad_empleados": l.cantidad_empleados,
-                "mensaje": l.mensaje,
-                "estado": l.estado,
-                "nota_admin": l.nota_admin,
-                "created_at": l.created_at.isoformat() if l.created_at else None,
+                "id": lead.id,
+                "razon_social": lead.razon_social,
+                "nombre_contacto": lead.nombre_contacto,
+                "email": lead.email,
+                "telefono": lead.telefono,
+                "cantidad_empleados": lead.cantidad_empleados,
+                "mensaje": lead.mensaje,
+                "estado": lead.estado,
+                "nota_admin": lead.nota_admin,
+                "created_at": lead.created_at.isoformat() if lead.created_at else None,
             }
-            for l in leads
+            for lead in leads
         ]
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error("Error en listar_leads: %s", e, exc_info=True)
+    except Exception as exc:
+        logger.error("Error en listar_leads: %s", exc, exc_info=True)
         raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
@@ -146,14 +131,13 @@ def actualizar_lead(
     lead_id: int,
     datos: LeadEmpresarialActualizar,
     db: Session = Depends(get_db),
-    _: int = Depends(_require_admin_dep)
+    _: int = Depends(require_admin),
 ):
     try:
         lead = db.execute(
             text("SELECT id FROM leads_empresariales WHERE id = :id"),
-            {"id": lead_id}
+            {"id": lead_id},
         ).fetchone()
-
         if not lead:
             raise HTTPException(status_code=404, detail="Lead no encontrado")
 
@@ -166,19 +150,18 @@ def actualizar_lead(
         if datos.nota_admin is not None:
             campos.append("nota_admin = :nota_admin")
             params["nota_admin"] = datos.nota_admin
-
         if not campos:
             raise HTTPException(status_code=400, detail="No se enviaron campos a actualizar")
 
         db.execute(
             text(f"UPDATE leads_empresariales SET {', '.join(campos)} WHERE id = :id"),
-            params
+            params,
         )
         db.commit()
 
         actualizado = db.execute(
-            text("SELECT * FROM leads_empresariales WHERE id = :id"),
-            {"id": lead_id}
+            text("SELECT id, estado, nota_admin FROM leads_empresariales WHERE id = :id"),
+            {"id": lead_id},
         ).fetchone()
 
         return {
@@ -188,6 +171,6 @@ def actualizar_lead(
         }
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error("Error en actualizar_lead: %s", e, exc_info=True)
+    except Exception as exc:
+        logger.error("Error en actualizar_lead: %s", exc, exc_info=True)
         raise HTTPException(status_code=500, detail="Error interno del servidor.")
