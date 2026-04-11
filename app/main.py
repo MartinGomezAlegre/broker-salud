@@ -14,6 +14,7 @@ from app.routers import leads
 from app.routers import beneficiarios
 from app.routers import upsells
 from app.routers import credenciales
+from app.routers import comercial
 from fastapi.security import HTTPBearer
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -63,6 +64,7 @@ app.include_router(upsells.router)
 app.include_router(upsells.admin_router)
 app.include_router(credenciales.router)
 app.include_router(credenciales.public_router)
+app.include_router(comercial.admin_router)
 
 @app.get("/health")
 def health_check():
