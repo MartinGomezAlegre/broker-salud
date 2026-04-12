@@ -119,18 +119,13 @@ def _dashboard_broker(db: Session, usuario):
         JOIN broker_sellers bs ON bs.id = s.broker_seller_id
         JOIN brokers b ON b.id = bs.broker_id
         WHERE bs.broker_id = :broker_id
+          AND s.estado = ANY(:states)
         ORDER BY s.created_at DESC, s.id DESC
         LIMIT 20
-    """), {"broker_id": broker.id}).fetchall()
-
-    liquidaciones = db.execute(text("""
-        SELECT id, monto, periodo_desde, periodo_hasta, estado, notas, paid_at, created_at
-        FROM commission_liquidations
-        WHERE destinatario_tipo = 'broker'
-          AND destinatario_id = :broker_id
-        ORDER BY COALESCE(paid_at, created_at) DESC, id DESC
-        LIMIT 20
-    """), {"broker_id": broker.id}).fetchall()
+    """), {
+        "broker_id": broker.id,
+        "states": list(COMMISSIONABLE_STATES),
+    }).fetchall()
 
     return {
         "rol": "broker",
@@ -164,7 +159,7 @@ def _dashboard_broker(db: Session, usuario):
             for item in equipo
         ],
         "ventas": [_serialize_sale(row, "broker") for row in ventas],
-        "liquidaciones": [_serialize_liquidacion(row) for row in liquidaciones],
+        "liquidaciones": [],
     }
 
 
@@ -223,18 +218,13 @@ def _dashboard_direct_seller(db: Session, usuario):
         JOIN planes p ON p.id = s.plan_id
         JOIN direct_sellers ds ON ds.id = s.direct_seller_id
         WHERE ds.id = :seller_id
+          AND s.estado = ANY(:states)
         ORDER BY s.created_at DESC, s.id DESC
         LIMIT 20
-    """), {"seller_id": seller.id}).fetchall()
-
-    liquidaciones = db.execute(text("""
-        SELECT id, monto, periodo_desde, periodo_hasta, estado, notas, paid_at, created_at
-        FROM commission_liquidations
-        WHERE destinatario_tipo = 'direct_seller'
-          AND destinatario_id = :seller_id
-        ORDER BY COALESCE(paid_at, created_at) DESC, id DESC
-        LIMIT 20
-    """), {"seller_id": seller.id}).fetchall()
+    """), {
+        "seller_id": seller.id,
+        "states": list(COMMISSIONABLE_STATES),
+    }).fetchall()
 
     return {
         "rol": "direct_seller",
@@ -259,7 +249,7 @@ def _dashboard_direct_seller(db: Session, usuario):
         },
         "equipo": [],
         "ventas": [_serialize_sale(row, "directo") for row in ventas],
-        "liquidaciones": [_serialize_liquidacion(row) for row in liquidaciones],
+        "liquidaciones": [],
     }
 
 

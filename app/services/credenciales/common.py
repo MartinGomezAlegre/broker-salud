@@ -16,7 +16,10 @@ logger = logging.getLogger(__name__)
 QR_SECRET = os.getenv("QR_SECRET") or SECRET_KEY
 QR_ALGORITHM = "HS256"
 QR_TOKEN_SECONDS = int(os.getenv("QR_TOKEN_SECONDS", "60"))
-FRONTEND_URL = os.getenv("FRONTEND_URL", "https://celdoctor.com").rstrip("/")
+FRONTEND_URL = (
+    os.getenv("FRONTEND_URL")
+    or "https://celdoctor-waitlist.vercel.app"
+).rstrip("/")
 DEFAULT_BENEFIT_TYPE = os.getenv("QR_DEFAULT_BENEFIT_TYPE", "farmacia")
 DEFAULT_DISCOUNT_PERCENTAGE = int(os.getenv("FARMACIA_DESCUENTO_PORCENTAJE", "70"))
 _qr_validations_table_checked = False
