@@ -46,7 +46,8 @@ def listar_usuarios(
                         LIMIT 1
                     ) sub ON true
                 ) usuarios_con_suscripcion
-                WHERE nombre ILIKE :q OR apellido ILIKE :q OR email ILIKE :q
+                WHERE COALESCE(rol, 'cliente') NOT IN ('broker', 'direct_seller', 'broker_seller')
+                  AND (nombre ILIKE :q OR apellido ILIKE :q OR email ILIKE :q)
                 ORDER BY created_at DESC LIMIT :limit OFFSET :offset
             """), params).fetchall()
         else:
@@ -76,6 +77,7 @@ def listar_usuarios(
                         LIMIT 1
                     ) sub ON true
                 ) usuarios_con_suscripcion
+                WHERE COALESCE(rol, 'cliente') NOT IN ('broker', 'direct_seller', 'broker_seller')
                 ORDER BY created_at DESC LIMIT :limit OFFSET :offset
             """), params).fetchall()
 

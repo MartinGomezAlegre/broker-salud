@@ -6,7 +6,7 @@ from fastapi import HTTPException
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-COMMISSIONABLE_STATES = ("activa", "cancelacion_programada", "cancelada", "vencida")
+COMMISSIONABLE_STATES = ("activa", "cancelacion_programada")
 
 REQUIRED_TABLES = {
     "brokers",
