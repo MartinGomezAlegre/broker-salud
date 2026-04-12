@@ -117,6 +117,7 @@ def _dashboard_broker(db: Session, usuario):
         JOIN usuarios u ON u.id = s.usuario_id
         JOIN planes p ON p.id = s.plan_id
         JOIN broker_sellers bs ON bs.id = s.broker_seller_id
+        JOIN brokers b ON b.id = bs.broker_id
         WHERE bs.broker_id = :broker_id
         ORDER BY s.created_at DESC, s.id DESC
         LIMIT 20
@@ -298,9 +299,13 @@ def _dashboard_broker_seller(db: Session, usuario):
         JOIN usuarios u ON u.id = s.usuario_id
         JOIN planes p ON p.id = s.plan_id
         WHERE s.broker_seller_id = :seller_id
+          AND s.estado = ANY(:states)
         ORDER BY s.created_at DESC, s.id DESC
         LIMIT 20
-    """), {"seller_id": seller.id}).fetchall()
+    """), {
+        "seller_id": seller.id,
+        "states": list(COMMISSIONABLE_STATES),
+    }).fetchall()
 
     revenue = sum(float(item.precio_pagado or 0) for item in ventas)
 
