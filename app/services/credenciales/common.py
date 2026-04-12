@@ -21,7 +21,7 @@ FRONTEND_URL = (
     or "https://celdoctor-waitlist.vercel.app"
 ).rstrip("/")
 DEFAULT_BENEFIT_TYPE = os.getenv("QR_DEFAULT_BENEFIT_TYPE", "farmacia")
-DEFAULT_DISCOUNT_PERCENTAGE = int(os.getenv("FARMACIA_DESCUENTO_PORCENTAJE", "70"))
+DEFAULT_DISCOUNT_PERCENTAGE = int(os.getenv("FARMACIA_DESCUENTO_PORCENTAJE", "40"))
 _qr_validations_table_checked = False
 _qr_validations_table_available = False
 
