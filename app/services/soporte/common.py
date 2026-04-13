@@ -4,9 +4,7 @@ from fastapi import Depends
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.auth import get_current_user
-from app.database import get_db
-from app.routers.admin_common import require_admin
+from app.routers.admin_common import require_roles
 
 logger = logging.getLogger(__name__)
 
@@ -14,10 +12,9 @@ ESTADOS_TICKET = {"abierto", "respondido", "cerrado"}
 
 
 def require_admin_dep(
-    db: Session = Depends(get_db),
-    usuario_id: int = Depends(get_current_user),
+    usuario_id: int = Depends(require_roles("admin")),
 ):
-    return require_admin(db=db, usuario_id=usuario_id)
+    return usuario_id
 
 
 def obtener_columnas_tickets(db: Session) -> set[str]:
