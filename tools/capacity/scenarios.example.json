@@ -1,0 +1,45 @@
+[
+  {
+    "name": "landing-home",
+    "path": "/",
+    "method": "GET",
+    "requests": 120,
+    "concurrency": 12
+  },
+  {
+    "name": "planes",
+    "path": "/planes",
+    "method": "GET",
+    "requests": 120,
+    "concurrency": 12
+  },
+  {
+    "name": "login-page",
+    "path": "/login",
+    "method": "GET",
+    "requests": 120,
+    "concurrency": 12
+  },
+  {
+    "name": "admin-company-metrics",
+    "path": "/api/proxy/admin/empresas/metricas-empresas",
+    "method": "GET",
+    "requests": 60,
+    "concurrency": 6,
+    "headers": {
+      "Authorization": "Bearer ${ADMIN_BEARER_TOKEN}",
+      "Accept": "application/json"
+    }
+  },
+  {
+    "name": "admin-support-tickets",
+    "path": "/api/proxy/admin/soporte/tickets",
+    "method": "GET",
+    "requests": 60,
+    "concurrency": 6,
+    "headers": {
+      "Authorization": "Bearer ${ADMIN_BEARER_TOKEN}",
+      "Accept": "application/json"
+    }
+  }
+]

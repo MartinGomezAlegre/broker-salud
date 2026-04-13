@@ -1,0 +1,44 @@
+[
+  {
+    "name": "landing-home-25c",
+    "path": "/",
+    "method": "GET",
+    "requests": 250,
+    "concurrency": 25
+  },
+  {
+    "name": "planes-25c",
+    "path": "/planes",
+    "method": "GET",
+    "requests": 250,
+    "concurrency": 25
+  },
+  {
+    "name": "login-page-25c",
+    "path": "/login",
+    "method": "GET",
+    "requests": 250,
+    "concurrency": 25
+  },
+  {
+    "name": "landing-home-50c",
+    "path": "/",
+    "method": "GET",
+    "requests": 500,
+    "concurrency": 50
+  },
+  {
+    "name": "planes-50c",
+    "path": "/planes",
+    "method": "GET",
+    "requests": 500,
+    "concurrency": 50
+  },
+  {
+    "name": "login-page-50c",
+    "path": "/login",
+    "method": "GET",
+    "requests": 500,
+    "concurrency": 50
+  }
+]
