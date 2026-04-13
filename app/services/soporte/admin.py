@@ -32,7 +32,7 @@ def listar_tickets_admin_service(db: Session, estado: Optional[str], prioridad: 
         tickets = db.execute(
             text(
                 f"""
-                SELECT t.id, t.asunto, t.mensaje,
+                SELECT t.id, t.asunto, t.mensaje, t.respuesta, t.respondido_en,
                        CASE
                            WHEN t.estado IS NULL OR t.estado = '' OR t.estado = 'nuevo' THEN 'abierto'
                            ELSE t.estado
@@ -61,6 +61,8 @@ def listar_tickets_admin_service(db: Session, estado: Optional[str], prioridad: 
                 "mensaje": ticket.mensaje,
                 "estado": ticket.estado,
                 "prioridad": ticket.prioridad,
+                "respuesta": ticket.respuesta,
+                "respondido_en": ticket.respondido_en.isoformat() if ticket.respondido_en else None,
                 "created_at": ticket.created_at.isoformat() if ticket.created_at else None,
             }
             for ticket in tickets

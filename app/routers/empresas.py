@@ -64,6 +64,22 @@ def crear_empresa_route(
     return crear_empresa(db, datos)
 
 
+@router.get("/exportar-empresas")
+def exportar_empresas_route(
+    db: Session = Depends(get_db),
+    _: int = Depends(require_admin),
+):
+    return exportar_empresas(db)
+
+
+@router.get("/metricas-empresas")
+def metricas_empresas_route(
+    db: Session = Depends(get_db),
+    _: int = Depends(require_admin),
+):
+    return metricas_empresas(db)
+
+
 @router.get("/{empresa_id}")
 def detalle_empresa_route(
     empresa_id: int,
@@ -200,19 +216,3 @@ def exportar_empleados_alias_route(
     _: int = Depends(require_admin),
 ):
     return exportar_empleados(db, empresa_id)
-
-
-@router.get("/exportar-empresas")
-def exportar_empresas_route(
-    db: Session = Depends(get_db),
-    _: int = Depends(require_admin),
-):
-    return exportar_empresas(db)
-
-
-@router.get("/metricas-empresas")
-def metricas_empresas_route(
-    db: Session = Depends(get_db),
-    _: int = Depends(require_admin),
-):
-    return metricas_empresas(db)
