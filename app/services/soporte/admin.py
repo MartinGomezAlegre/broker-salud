@@ -6,13 +6,21 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.schemas.soporte import TicketEstado, TicketResponder
-from app.services.soporte.common import ESTADOS_TICKET
+from app.services.soporte.common import (
+    ESTADOS_TICKET,
+    columna_mensaje_ticket,
+    obtener_columnas_tickets,
+    select_mensaje_ticket,
+    select_texto_opcional,
+    select_timestamp_opcional,
+)
 
 logger = logging.getLogger(__name__)
 
 
 def listar_tickets_admin_service(db: Session, estado: Optional[str], prioridad: Optional[str]):
     try:
+        columnas = obtener_columnas_tickets(db)
         filtros = []
         params: dict = {}
 
@@ -32,7 +40,10 @@ def listar_tickets_admin_service(db: Session, estado: Optional[str], prioridad: 
         tickets = db.execute(
             text(
                 f"""
-                SELECT t.id, t.asunto, t.mensaje, t.respuesta, t.respondido_en,
+                SELECT t.id, t.asunto,
+                       {select_mensaje_ticket(columnas)},
+                       {select_texto_opcional(columnas, 'respuesta')},
+                       {select_timestamp_opcional(columnas, 'respondido_en')},
                        CASE
                            WHEN t.estado IS NULL OR t.estado = '' OR t.estado = 'nuevo' THEN 'abierto'
                            ELSE t.estado
@@ -76,14 +87,36 @@ def listar_tickets_admin_service(db: Session, estado: Optional[str], prioridad: 
 
 def obtener_ticket_admin_service(db: Session, ticket_id: int):
     try:
+        columnas = obtener_columnas_tickets(db)
         ticket = db.execute(
             text(
                 """
-                SELECT t.*, u.nombre, u.apellido, u.email, u.telefono, u.dni
+                SELECT
+                    t.id,
+                    t.asunto,
+                    {mensaje_select},
+                    CASE
+                        WHEN t.estado IS NULL OR t.estado = '' OR t.estado = 'nuevo' THEN 'abierto'
+                        ELSE t.estado
+                    END AS estado,
+                    COALESCE(t.prioridad, 'normal') AS prioridad,
+                    {respuesta_select},
+                    {respondido_en_select},
+                    t.created_at,
+                    u.nombre,
+                    u.apellido,
+                    u.email,
+                    u.telefono,
+                    u.dni
                 FROM tickets_soporte t
                 JOIN usuarios u ON u.id = t.usuario_id
                 WHERE t.id = :id
                 """
+                .format(
+                    mensaje_select=select_mensaje_ticket(columnas),
+                    respuesta_select=select_texto_opcional(columnas, "respuesta"),
+                    respondido_en_select=select_timestamp_opcional(columnas, "respondido_en"),
+                )
             ),
             {"id": ticket_id},
         ).fetchone()
@@ -117,6 +150,7 @@ def obtener_ticket_admin_service(db: Session, ticket_id: int):
 
 def responder_ticket_service(db: Session, ticket_id: int, admin_id: int, datos: TicketResponder):
     try:
+        columnas = obtener_columnas_tickets(db)
         ticket = db.execute(
             text(
                 """
@@ -133,29 +167,31 @@ def responder_ticket_service(db: Session, ticket_id: int, admin_id: int, datos: 
         if not ticket:
             raise HTTPException(status_code=404, detail="Ticket no encontrado")
 
-        params: dict = {
-            "id": ticket_id,
-            "respuesta": datos.respuesta,
-            "estado": datos.estado,
-            "admin_id": admin_id,
-        }
-        prioridad_sql = ""
-        if datos.prioridad:
-            prioridad_sql = ", prioridad = :prioridad"
+        set_clauses = ["estado = :estado"]
+        params: dict = {"id": ticket_id, "estado": datos.estado}
+
+        if "respuesta" in columnas:
+            set_clauses.insert(0, "respuesta = :respuesta")
+            params["respuesta"] = datos.respuesta
+        if "admin_id" in columnas:
+            set_clauses.append("admin_id = :admin_id")
+            params["admin_id"] = admin_id
+        if "respondido_en" in columnas:
+            set_clauses.append("respondido_en = NOW()")
+        if "updated_at" in columnas:
+            set_clauses.append("updated_at = NOW()")
+        if datos.prioridad and "prioridad" in columnas:
+            set_clauses.append("prioridad = :prioridad")
             params["prioridad"] = datos.prioridad
 
         db.execute(
             text(
-                f"""
+                """
                 UPDATE tickets_soporte
-                SET respuesta = :respuesta,
-                    estado = :estado,
-                    admin_id = :admin_id,
-                    respondido_en = NOW(),
-                    updated_at = NOW()
-                    {prioridad_sql}
+                SET {set_clauses}
                 WHERE id = :id
                 """
+                .format(set_clauses=", ".join(set_clauses))
             ),
             params,
         )
@@ -169,7 +205,27 @@ def responder_ticket_service(db: Session, ticket_id: int, admin_id: int, datos: 
             logger.error("Error enviando email ticket respondido: %s", exc)
 
         actualizado = db.execute(
-            text("SELECT * FROM tickets_soporte WHERE id = :id"),
+            text(
+                """
+                SELECT
+                    id,
+                    asunto,
+                    {mensaje_select},
+                    CASE
+                        WHEN estado IS NULL OR estado = '' OR estado = 'nuevo' THEN 'abierto'
+                        ELSE estado
+                    END AS estado,
+                    COALESCE(prioridad, 'normal') AS prioridad,
+                    {respuesta_select},
+                    {respondido_en_select}
+                FROM tickets_soporte
+                WHERE id = :id
+                """.format(
+                    mensaje_select=select_mensaje_ticket(columnas, alias="tickets_soporte"),
+                    respuesta_select=select_texto_opcional(columnas, "respuesta", alias="tickets_soporte"),
+                    respondido_en_select=select_timestamp_opcional(columnas, "respondido_en", alias="tickets_soporte"),
+                )
+            ),
             {"id": ticket_id},
         ).fetchone()
 
@@ -196,6 +252,7 @@ def cambiar_estado_ticket_service(db: Session, ticket_id: int, datos: TicketEsta
         )
 
     try:
+        columnas = obtener_columnas_tickets(db)
         ticket = db.execute(
             text("SELECT id FROM tickets_soporte WHERE id = :id"),
             {"id": ticket_id},
@@ -204,8 +261,11 @@ def cambiar_estado_ticket_service(db: Session, ticket_id: int, datos: TicketEsta
         if not ticket:
             raise HTTPException(status_code=404, detail="Ticket no encontrado")
 
+        set_clauses = ["estado = :estado"]
+        if "updated_at" in columnas:
+            set_clauses.append("updated_at = NOW()")
         db.execute(
-            text("UPDATE tickets_soporte SET estado = :estado, updated_at = NOW() WHERE id = :id"),
+            text("UPDATE tickets_soporte SET {set_clauses} WHERE id = :id".format(set_clauses=", ".join(set_clauses))),
             {"estado": datos.estado, "id": ticket_id},
         )
         db.commit()
