@@ -1,0 +1,29 @@
+[
+  {
+    "name": "health-50c",
+    "path": "/health",
+    "method": "GET",
+    "requests": 500,
+    "concurrency": 50
+  },
+  {
+    "name": "usuarios-me-50c",
+    "path": "/usuarios/me",
+    "method": "GET",
+    "requests": 500,
+    "concurrency": 50,
+    "headers": {
+      "Authorization": "Bearer ${PERF_BEARER_TOKEN}"
+    }
+  },
+  {
+    "name": "suscripcion-mia-50c",
+    "path": "/suscripciones/mia",
+    "method": "GET",
+    "requests": 500,
+    "concurrency": 50,
+    "headers": {
+      "Authorization": "Bearer ${PERF_BEARER_TOKEN}"
+    }
+  }
+]

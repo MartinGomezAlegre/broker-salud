@@ -153,10 +153,61 @@ def main() -> None:
 
             if table_exists(cursor, "usuarios"):
                 query_results["usuarios_count"] = timed_query(cursor, "SELECT COUNT(*) FROM usuarios")
+                sample_login = timed_query(
+                    cursor,
+                    """
+                    SELECT id
+                    FROM usuarios
+                    WHERE email LIKE 'perf_user_%%@example.com'
+                    ORDER BY id DESC
+                    LIMIT 1
+                    """,
+                )
+                if sample_login["sample"] is not None:
+                    query_results["login_lookup_by_email"] = timed_query(
+                        cursor,
+                        """
+                        SELECT id, password_hash, rol, activo
+                        FROM usuarios
+                        WHERE email = (
+                            SELECT email
+                            FROM usuarios
+                            WHERE email LIKE 'perf_user_%%@example.com'
+                            ORDER BY id DESC
+                            LIMIT 1
+                        )
+                        """,
+                    )
             if table_exists(cursor, "suscripciones"):
                 query_results["suscripciones_activas"] = timed_query(
                     cursor,
                     "SELECT COUNT(*) FROM suscripciones WHERE estado IN ('activa', 'cancelacion_programada')",
+                )
+                query_results["mi_suscripcion_lookup"] = timed_query(
+                    cursor,
+                    """
+                    SELECT s.id
+                    FROM suscripciones s
+                    JOIN usuarios u ON u.id = s.usuario_id
+                    WHERE u.email = (
+                        SELECT email
+                        FROM usuarios
+                        WHERE email LIKE 'perf_user_%%@example.com'
+                        ORDER BY id DESC
+                        LIMIT 1
+                    )
+                      AND s.estado NOT IN ('cancelada', 'vencida')
+                    ORDER BY
+                        CASE s.estado
+                            WHEN 'activa' THEN 1
+                            WHEN 'cancelacion_programada' THEN 2
+                            WHEN 'pendiente_pago' THEN 3
+                            ELSE 4
+                        END,
+                        COALESCE(s.fecha_vencimiento, s.created_at) DESC,
+                        s.created_at DESC
+                    LIMIT 1
+                    """,
                 )
             if table_exists(cursor, "tickets_soporte"):
                 query_results["tickets_abiertos"] = timed_query(

@@ -51,6 +51,37 @@ Notas:
 - El benchmark de escritura usa una `TEMP TABLE`, por lo que no deja basura persistente.
 - Igual conviene correrlo primero en horario de baja carga.
 
+## 2.1 Preparar una base local de stress
+
+Si queres probar 100k usuarios sin tocar produccion:
+
+```bash
+C:\Users\marti\Desktop\broker-salud\venv\Scripts\python.exe tools/capacity/prepare_local_perf_db.py
+C:\Users\marti\Desktop\broker-salud\venv\Scripts\python.exe tools/capacity/seed_massive_core.py --users 100000 --reset-generated
+```
+
+Eso deja lista una base local con:
+
+- usuarios
+- suscripciones
+- tickets
+- pagos
+- beneficiarios
+- columnas e indices minimos para que el codigo actual sea medible
+
+Credenciales que genera:
+
+- `perf_admin@example.com / PerfTest123!`
+- `perf_user_000001@example.com / PerfTest123!`
+
+Para medir endpoints autenticados sin sesgar el resultado con el rate limiter del login:
+
+1. hace un login una sola vez
+2. exporta el bearer en `PERF_BEARER_TOKEN`
+3. corre `local-api-scenarios.json`, que prueba `/usuarios/me` y `/suscripciones/mia`
+
+El login en rafaga es util para validar proteccion anti abuso, pero no para estimar throughput real de la app porque devuelve `429` por diseno.
+
 ## 3. Evidencia para entregar
 
 Lo ideal es entregar:
@@ -84,6 +115,23 @@ Lo ideal es entregar:
 - temp write benchmark con 1.000 filas
 - temp write benchmark con 5.000 filas
 - temp write benchmark con 10.000 filas
+
+### API local con 100k usuarios
+
+```bash
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+Y en otra terminal:
+
+```bash
+set PERF_BEARER_TOKEN=tu_token
+python tools/capacity/http_benchmark.py \
+  --base-url http://127.0.0.1:8000 \
+  --scenarios tools/capacity/local-api-scenarios.json \
+  --json-out tools/capacity/local-api-results.json \
+  --markdown-out tools/capacity/local-api-results.md
+```
 
 ## 5. Regla practica para tu entrega
 
