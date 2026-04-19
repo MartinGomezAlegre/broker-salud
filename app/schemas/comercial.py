@@ -106,15 +106,13 @@ class DirectSellerActualizar(BaseModel):
 class BrokerPortalSellerCrear(BaseModel):
     nombre: str = Field(min_length=2, max_length=120)
     email: str = Field(min_length=5, max_length=180)
-    contrasenia: str | None = Field(default=None, min_length=10, max_length=120)
+    contrasenia: str = Field(min_length=10, max_length=120)
     referral_code: str | None = Field(default=None, max_length=40)
     estado: EstadoComercial = "activo"
 
     @field_validator("contrasenia")
     @classmethod
-    def validar_contrasenia(cls, value: str | None):
-        if value is None or not value.strip():
-            return None
+    def validar_contrasenia(cls, value: str):
         return validate_password_strength(value)
 
 
