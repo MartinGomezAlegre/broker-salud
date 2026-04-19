@@ -1,19 +1,22 @@
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy.orm import Session
-from sqlalchemy import text
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from pydantic import BaseModel
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+from app.auth import crear_token, hashear_password, verificar_password
 from app.database import get_db
-from app.auth import verificar_password, crear_token, hashear_password
 from app.limiter import limiter
+from app.security.passwords import validate_password_strength
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/auth",
-    tags=["autenticacion"]
+    tags=["autenticacion"],
 )
 
 
@@ -36,8 +39,14 @@ class NuevaContraseniaData(BaseModel):
 def login(request: Request, datos: LoginData, db: Session = Depends(get_db)):
     try:
         usuario = db.execute(
-            text("SELECT * FROM usuarios WHERE email = :email"),
-            {"email": datos.email}
+            text(
+                """
+                SELECT id, nombre, email, rol, activo, password_hash, COALESCE(password_version, 1) AS password_version
+                FROM usuarios
+                WHERE email = :email
+                """
+            ),
+            {"email": datos.email},
         ).fetchone()
 
         if not usuario:
@@ -46,7 +55,14 @@ def login(request: Request, datos: LoginData, db: Session = Depends(get_db)):
         if not verificar_password(datos.contrasenia, usuario.password_hash):
             raise HTTPException(status_code=401, detail="Credenciales incorrectas")
 
-        token = crear_token({"id": usuario.id, "rol": usuario.rol})
+        if not usuario.activo:
+            raise HTTPException(status_code=401, detail="Cuenta desactivada")
+
+        token = crear_token({
+            "id": usuario.id,
+            "rol": usuario.rol,
+            "pwdv": int(usuario.password_version or 1),
+        })
 
         return {
             "access_token": token,
@@ -55,13 +71,13 @@ def login(request: Request, datos: LoginData, db: Session = Depends(get_db)):
                 "id": usuario.id,
                 "nombre": usuario.nombre,
                 "email": usuario.email,
-                "rol": usuario.rol
-            }
+                "rol": usuario.rol,
+            },
         }
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error("Error en login: %s", e, exc_info=True)
+    except Exception as exc:
+        logger.error("Error en login: %s", exc, exc_info=True)
         raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
@@ -70,15 +86,15 @@ def login(request: Request, datos: LoginData, db: Session = Depends(get_db)):
 def recuperar_contrasenia(
     request: Request,
     datos: RecuperarContraseniaData,
-    db: Session = Depends(get_db)
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
 ):
     try:
         usuario = db.execute(
             text("SELECT id, nombre, email FROM usuarios WHERE email = :email"),
-            {"email": datos.email}
+            {"email": datos.email},
         ).fetchone()
 
-        # Respuesta siempre igual para no revelar si el email existe
         respuesta = {"message": "Si el email existe, te enviamos las instrucciones"}
 
         if not usuario:
@@ -87,72 +103,79 @@ def recuperar_contrasenia(
         token = secrets.token_urlsafe(32)
         expira_en = datetime.now(timezone.utc) + timedelta(hours=1)
 
-        # Limpiar tokens anteriores no usados del mismo usuario
         db.execute(
             text("DELETE FROM tokens_recuperacion WHERE usuario_id = :uid AND usado = false"),
-            {"uid": usuario.id}
+            {"uid": usuario.id},
         )
 
         db.execute(
-            text("""
+            text(
+                """
                 INSERT INTO tokens_recuperacion (usuario_id, token, expira_en)
                 VALUES (:usuario_id, :token, :expira_en)
-            """),
-            {"usuario_id": usuario.id, "token": token, "expira_en": expira_en}
+                """
+            ),
+            {"usuario_id": usuario.id, "token": token, "expira_en": expira_en},
         )
         db.commit()
 
-        try:
-            from app.services.email import enviar_email_recuperacion
-            enviar_email_recuperacion(usuario.email, usuario.nombre, token)
-        except Exception as e:
-            logger.error("Error enviando email recuperacion: %s", e)
+        from app.services.email import dispatch_email, enviar_email_recuperacion
+
+        dispatch_email(background_tasks, enviar_email_recuperacion, usuario.email, usuario.nombre, token)
 
         return respuesta
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error("Error en recuperar_contrasenia: %s", e, exc_info=True)
+    except Exception as exc:
+        logger.error("Error en recuperar_contrasenia: %s", exc, exc_info=True)
         raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 @router.post("/nueva-contrasenia")
 def nueva_contrasenia(datos: NuevaContraseniaData, db: Session = Depends(get_db)):
     try:
-        if len(datos.nueva_contrasenia) < 8:
-            raise HTTPException(
-                status_code=400,
-                detail="La contraseña debe tener al menos 8 caracteres"
-            )
+        try:
+            nueva_contrasenia = validate_password_strength(datos.nueva_contrasenia)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
         registro = db.execute(
-            text("""
+            text(
+                """
                 SELECT id, usuario_id FROM tokens_recuperacion
                 WHERE token = :token
                   AND usado = false
                   AND expira_en > NOW()
-            """),
-            {"token": datos.token}
+                """
+            ),
+            {"token": datos.token},
         ).fetchone()
 
         if not registro:
-            raise HTTPException(status_code=400, detail="Token inválido o expirado")
+            raise HTTPException(status_code=400, detail="Token invalido o expirado")
 
-        nuevo_hash = hashear_password(datos.nueva_contrasenia)
+        nuevo_hash = hashear_password(nueva_contrasenia)
 
         db.execute(
-            text("UPDATE usuarios SET password_hash = :hash WHERE id = :id"),
-            {"hash": nuevo_hash, "id": registro.usuario_id}
+            text(
+                """
+                UPDATE usuarios
+                SET password_hash = :hash,
+                    password_version = COALESCE(password_version, 1) + 1
+                WHERE id = :id
+                """
+            ),
+            {"hash": nuevo_hash, "id": registro.usuario_id},
         )
         db.execute(
             text("UPDATE tokens_recuperacion SET usado = true WHERE id = :id"),
-            {"id": registro.id}
+            {"id": registro.id},
         )
         db.commit()
 
-        return {"message": "Contraseña actualizada correctamente"}
+        return {"message": "Contrasena actualizada correctamente"}
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error("Error en nueva_contrasenia: %s", e, exc_info=True)
+    except Exception as exc:
+        logger.error("Error en nueva_contrasenia: %s", exc, exc_info=True)
         raise HTTPException(status_code=500, detail="Error interno del servidor.")

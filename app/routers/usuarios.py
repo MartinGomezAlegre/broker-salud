@@ -1,13 +1,14 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user, hashear_password
 from app.database import get_db
+from app.limiter import limiter
 from app.schemas.usuario import UsuarioCrear, UsuarioRespuesta
 
 logger = logging.getLogger(__name__)
@@ -49,7 +50,13 @@ def _perfil_payload(usuario) -> dict:
 
 
 @router.post("", response_model=UsuarioRespuesta)
-def crear_usuario(usuario: UsuarioCrear, db: Session = Depends(get_db)):
+@limiter.limit("5/hour")
+def crear_usuario(
+    request: Request,
+    usuario: UsuarioCrear,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
     try:
         existe = db.execute(
             text("SELECT id FROM usuarios WHERE email = :email"),
@@ -95,12 +102,9 @@ def crear_usuario(usuario: UsuarioCrear, db: Session = Depends(get_db)):
             {"email": usuario.email},
         ).fetchone()
 
-        try:
-            from app.services.email import enviar_email_bienvenida
+        from app.services.email import dispatch_email, enviar_email_bienvenida
 
-            enviar_email_bienvenida(nuevo.email, nuevo.nombre)
-        except Exception as exc:  # pragma: no cover - side effect externo
-            logger.error("Error enviando email bienvenida: %s", exc)
+        dispatch_email(background_tasks, enviar_email_bienvenida, nuevo.email, nuevo.nombre)
 
         return nuevo
     except HTTPException:
@@ -207,7 +211,13 @@ def obtener_usuario(
             raise HTTPException(status_code=403, detail="No tenes permiso para ver este perfil")
 
         usuario = db.execute(
-            text("SELECT * FROM usuarios WHERE id = :id"),
+            text(
+                """
+                SELECT id, nombre, apellido, email, rol
+                FROM usuarios
+                WHERE id = :id
+                """
+            ),
             {"id": id},
         ).fetchone()
 

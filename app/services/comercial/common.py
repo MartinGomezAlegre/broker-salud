@@ -55,7 +55,7 @@ def ensure_commercial_schema(db: Session):
         raise HTTPException(
             status_code=503,
             detail=(
-                "El modulo comercial todavia no esta migrado en la base de datos. "
+                "El modulo comercial no esta migrado en la base de datos. Ejecuta alembic upgrade head. "
                 + "; ".join(missing_parts)
             ),
         )

@@ -1,10 +1,11 @@
 import logging
 
-from fastapi import HTTPException
+from fastapi import BackgroundTasks, HTTPException
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.schemas.admin import ActualizarPlan, CambiarEstadoSuscripcion
+from app.services.email import dispatch_email, enviar_email_suscripcion_activa
 
 logger = logging.getLogger(__name__)
 
@@ -113,12 +114,13 @@ def cambiar_estado_suscripcion(
     db: Session,
     suscripcion_id: int,
     datos: CambiarEstadoSuscripcion,
+    background_tasks: BackgroundTasks | None = None,
 ):
     try:
         if datos.estado not in ESTADOS_PERMITIDOS:
             raise HTTPException(
                 status_code=400,
-                detail=f"Estado inválido. Permitidos: {', '.join(ESTADOS_PERMITIDOS)}",
+                detail=f"Estado invalido. Permitidos: {', '.join(ESTADOS_PERMITIDOS)}",
             )
 
         row = db.execute(text("""
@@ -133,7 +135,7 @@ def cambiar_estado_suscripcion(
         """), {"id": suscripcion_id}).fetchone()
 
         if not row:
-            raise HTTPException(status_code=404, detail="Suscripción no encontrada")
+            raise HTTPException(status_code=404, detail="Suscripcion no encontrada")
 
         estado_anterior = row.estado
 
@@ -143,24 +145,22 @@ def cambiar_estado_suscripcion(
         )
 
         if datos.estado == "activa" and estado_anterior != "activa":
-            try:
-                venc = db.execute(
-                    text("SELECT fecha_vencimiento FROM suscripciones WHERE id = :id"),
-                    {"id": suscripcion_id},
-                ).fetchone()
-                fecha_venc_str = venc.fecha_vencimiento.isoformat() if venc and venc.fecha_vencimiento else "—"
-                precio = float(row.precio_pagado) if row.precio_pagado is not None else 0.0
-                from app.services.email import enviar_email_suscripcion_activa
+            venc = db.execute(
+                text("SELECT fecha_vencimiento FROM suscripciones WHERE id = :id"),
+                {"id": suscripcion_id},
+            ).fetchone()
+            fecha_venc_str = venc.fecha_vencimiento.isoformat() if venc and venc.fecha_vencimiento else "-"
+            precio = float(row.precio_pagado) if row.precio_pagado is not None else 0.0
 
-                enviar_email_suscripcion_activa(
-                    row.usuario_email,
-                    row.usuario_nombre.split()[0],
-                    row.plan_nombre,
-                    fecha_venc_str,
-                    precio,
-                )
-            except Exception as exc:
-                logger.error("Error enviando email activacion suscripcion: %s", exc)
+            dispatch_email(
+                background_tasks,
+                enviar_email_suscripcion_activa,
+                row.usuario_email,
+                row.usuario_nombre.split()[0],
+                row.plan_nombre,
+                fecha_venc_str,
+                precio,
+            )
 
         db.execute(text("""
             INSERT INTO historial_suscripciones

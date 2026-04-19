@@ -1,11 +1,12 @@
 import logging
 from typing import Optional
 
-from fastapi import HTTPException
+from fastapi import BackgroundTasks, HTTPException
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.schemas.soporte import TicketEstado, TicketResponder
+from app.services.email import dispatch_email, enviar_email_ticket_respondido
 from app.services.soporte.common import (
     ESTADOS_TICKET,
     columna_mensaje_ticket,
@@ -148,7 +149,13 @@ def obtener_ticket_admin_service(db: Session, ticket_id: int):
         raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
-def responder_ticket_service(db: Session, ticket_id: int, admin_id: int, datos: TicketResponder):
+def responder_ticket_service(
+    db: Session,
+    ticket_id: int,
+    admin_id: int,
+    datos: TicketResponder,
+    background_tasks: BackgroundTasks | None = None,
+):
     try:
         columnas = obtener_columnas_tickets(db)
         ticket = db.execute(
@@ -197,12 +204,15 @@ def responder_ticket_service(db: Session, ticket_id: int, admin_id: int, datos: 
         )
         db.commit()
 
-        try:
-            from app.services.email import enviar_email_ticket_respondido
-
-            enviar_email_ticket_respondido(ticket.email, ticket.nombre, ticket.id, ticket.asunto, datos.respuesta)
-        except Exception as exc:
-            logger.error("Error enviando email ticket respondido: %s", exc)
+        dispatch_email(
+            background_tasks,
+            enviar_email_ticket_respondido,
+            ticket.email,
+            ticket.nombre,
+            ticket.id,
+            ticket.asunto,
+            datos.respuesta,
+        )
 
         actualizado = db.execute(
             text(

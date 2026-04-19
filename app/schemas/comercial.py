@@ -1,7 +1,9 @@
 from datetime import date
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from app.security.passwords import validate_password_strength
 
 
 EstadoComercial = Literal["activo", "inactivo"]
@@ -17,7 +19,14 @@ class BrokerCrear(BaseModel):
     estado: EstadoComercial = "activo"
     usuario_id: int | None = None
     access_email: str | None = Field(default=None, max_length=180)
-    access_password: str | None = Field(default=None, min_length=8, max_length=120)
+    access_password: str | None = Field(default=None, min_length=10, max_length=120)
+
+    @field_validator("access_password")
+    @classmethod
+    def validar_access_password(cls, value: str | None):
+        if value is None or not value.strip():
+            return None
+        return validate_password_strength(value)
 
 
 class BrokerActualizar(BaseModel):
@@ -28,7 +37,14 @@ class BrokerActualizar(BaseModel):
     estado: EstadoComercial | None = None
     usuario_id: int | None = None
     access_email: str | None = Field(default=None, max_length=180)
-    access_password: str | None = Field(default=None, min_length=8, max_length=120)
+    access_password: str | None = Field(default=None, min_length=10, max_length=120)
+
+    @field_validator("access_password")
+    @classmethod
+    def validar_access_password(cls, value: str | None):
+        if value is None or not value.strip():
+            return None
+        return validate_password_strength(value)
 
 
 class BrokerSellerCrear(BaseModel):
@@ -58,7 +74,14 @@ class DirectSellerCrear(BaseModel):
     estado: EstadoComercial = "activo"
     usuario_id: int | None = None
     access_email: str | None = Field(default=None, max_length=180)
-    access_password: str | None = Field(default=None, min_length=8, max_length=120)
+    access_password: str | None = Field(default=None, min_length=10, max_length=120)
+
+    @field_validator("access_password")
+    @classmethod
+    def validar_access_password(cls, value: str | None):
+        if value is None or not value.strip():
+            return None
+        return validate_password_strength(value)
 
 
 class DirectSellerActualizar(BaseModel):
@@ -70,23 +93,44 @@ class DirectSellerActualizar(BaseModel):
     estado: EstadoComercial | None = None
     usuario_id: int | None = None
     access_email: str | None = Field(default=None, max_length=180)
-    access_password: str | None = Field(default=None, min_length=8, max_length=120)
+    access_password: str | None = Field(default=None, min_length=10, max_length=120)
+
+    @field_validator("access_password")
+    @classmethod
+    def validar_access_password(cls, value: str | None):
+        if value is None or not value.strip():
+            return None
+        return validate_password_strength(value)
 
 
 class BrokerPortalSellerCrear(BaseModel):
     nombre: str = Field(min_length=2, max_length=120)
     email: str = Field(min_length=5, max_length=180)
-    contrasenia: str = Field(min_length=8, max_length=120)
+    contrasenia: str | None = Field(default=None, min_length=10, max_length=120)
     referral_code: str | None = Field(default=None, max_length=40)
     estado: EstadoComercial = "activo"
+
+    @field_validator("contrasenia")
+    @classmethod
+    def validar_contrasenia(cls, value: str | None):
+        if value is None or not value.strip():
+            return None
+        return validate_password_strength(value)
 
 
 class BrokerPortalSellerActualizar(BaseModel):
     nombre: str | None = Field(default=None, min_length=2, max_length=120)
     email: str | None = Field(default=None, min_length=5, max_length=180)
-    nueva_contrasenia: str | None = Field(default=None, min_length=8, max_length=120)
+    nueva_contrasenia: str | None = Field(default=None, min_length=10, max_length=120)
     referral_code: str | None = Field(default=None, max_length=40)
     estado: EstadoComercial | None = None
+
+    @field_validator("nueva_contrasenia")
+    @classmethod
+    def validar_nueva_contrasenia(cls, value: str | None):
+        if value is None or not value.strip():
+            return None
+        return validate_password_strength(value)
 
 
 class LiquidacionCrear(BaseModel):

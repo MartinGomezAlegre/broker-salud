@@ -1,7 +1,7 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -42,6 +42,7 @@ class LeadEmpresarialActualizar(BaseModel):
 def crear_lead_empresarial(
     request: Request,
     datos: LeadEmpresarialCrear,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     del request
@@ -61,19 +62,18 @@ def crear_lead_empresarial(
         })
         db.commit()
 
-        try:
-            from app.services.email import enviar_email_lead_empresarial
+        from app.services.email import dispatch_email, enviar_email_lead_empresarial
 
-            enviar_email_lead_empresarial(
-                datos.nombre_contacto,
-                datos.razon_social,
-                str(datos.email),
-                datos.telefono,
-                datos.cantidad_empleados,
-                datos.mensaje,
-            )
-        except Exception as exc:
-            logger.error("Error enviando email lead empresarial: %s", exc)
+        dispatch_email(
+            background_tasks,
+            enviar_email_lead_empresarial,
+            datos.nombre_contacto,
+            datos.razon_social,
+            str(datos.email),
+            datos.telefono,
+            datos.cantidad_empleados,
+            datos.mensaje,
+        )
 
         return {"message": "Gracias por tu interes. Te contactamos en 24hs."}
     except HTTPException:

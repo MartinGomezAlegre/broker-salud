@@ -4,8 +4,14 @@ from fastapi import HTTPException
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.services.comercial.accounts import create_commercial_user, update_commercial_user
+from app.services.comercial.accounts import (
+    create_commercial_user,
+    create_pending_commercial_user,
+    update_commercial_user,
+)
 from app.services.comercial.common import ensure_commercial_schema, generate_referral_code, referral_code_exists
+from app.services.email import dispatch_email, enviar_email_invitacion_cuenta
+from app.services.invitations import create_account_invitation
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +46,7 @@ def crear_broker_seller_desde_broker(
     *,
     nombre: str,
     email: str,
-    contrasenia: str,
+    contrasenia: str | None,
     referral_code: str | None,
     estado: str,
 ):
@@ -51,13 +57,38 @@ def crear_broker_seller_desde_broker(
         if referral_code_exists(db, code):
             raise HTTPException(status_code=400, detail="El referral code ya esta en uso")
 
-        linked_user_id = create_commercial_user(
-            db,
-            full_name=nombre,
-            email=email,
-            password=contrasenia,
-            role="broker_seller",
-        )
+        invitation_email = None
+        if contrasenia and contrasenia.strip():
+            linked_user_id = create_commercial_user(
+                db,
+                full_name=nombre,
+                email=email,
+                password=contrasenia,
+                role="broker_seller",
+            )
+        else:
+            linked_user_id = create_pending_commercial_user(
+                db,
+                full_name=nombre,
+                email=email,
+                role="broker_seller",
+            )
+            invitation = create_account_invitation(
+                db,
+                user_id=linked_user_id,
+                email=email,
+                full_name=nombre,
+                role="broker_seller",
+                invited_by_user_id=usuario_id,
+                context_type="broker_seller",
+                context_id=broker.id,
+            )
+            invitation_email = {
+                "email": email,
+                "full_name": nombre,
+                "token": invitation["token"],
+                "role": "broker_seller",
+            }
 
         row = db.execute(
             text(
@@ -94,6 +125,15 @@ def crear_broker_seller_desde_broker(
         ).fetchone()
 
         db.commit()
+        if invitation_email:
+            dispatch_email(
+                None,
+                enviar_email_invitacion_cuenta,
+                invitation_email["email"],
+                invitation_email["full_name"],
+                invitation_email["token"],
+                invitation_email["role"],
+            )
         return obtener_miembro_equipo(db, usuario_id, row.id)
     except HTTPException:
         raise

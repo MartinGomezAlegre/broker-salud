@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
 from app.database import get_db
+from app.limiter import limiter
 from app.schemas.suscripcion import SuscripcionCrear, SuscripcionRespuesta
 from app.services.suscripciones import cancelar_mi_suscripcion, contratar_plan, mi_suscripcion
 
@@ -10,7 +11,9 @@ router = APIRouter(prefix="/suscripciones", tags=["suscripciones"])
 
 
 @router.post("", response_model=SuscripcionRespuesta)
+@limiter.limit("10/hour")
 def contratar_plan_route(
+    request: Request,
     datos: SuscripcionCrear,
     db: Session = Depends(get_db),
     usuario_id: int = Depends(get_current_user),

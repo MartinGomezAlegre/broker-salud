@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -14,6 +14,7 @@ from app.schemas.empresas import (
     EmpresaCrear,
     SuscripcionEmpresarialCrear,
 )
+from app.services.audit import log_audit_event
 from app.services.empresas.companies import (
     actualizar_empresa,
     cambiar_estado_empresa,
@@ -66,10 +67,20 @@ def crear_empresa_route(
 
 @router.get("/exportar-empresas")
 def exportar_empresas_route(
+    request: Request,
     db: Session = Depends(get_db),
-    _: int = Depends(require_admin),
+    admin_id: int = Depends(require_admin),
 ):
-    return exportar_empresas(db)
+    response = exportar_empresas(db)
+    log_audit_event(
+        db,
+        actor_user_id=admin_id,
+        action="export_companies_excel",
+        entity_type="empresas",
+        entity_id="excel",
+        request=request,
+    )
+    return response
 
 
 @router.get("/metricas-empresas")
@@ -82,11 +93,22 @@ def metricas_empresas_route(
 
 @router.get("/{empresa_id}")
 def detalle_empresa_route(
+    request: Request,
     empresa_id: int,
     db: Session = Depends(get_db),
-    _: int = Depends(require_admin),
+    admin_id: int = Depends(require_admin),
 ):
-    return detalle_empresa(db, empresa_id)
+    resultado = detalle_empresa(db, empresa_id)
+    log_audit_event(
+        db,
+        actor_user_id=admin_id,
+        action="read_company_detail",
+        entity_type="empresa",
+        entity_id=empresa_id,
+        request=request,
+        metadata={"empleados_total": resultado.get("empleados_total")},
+    )
+    return resultado
 
 
 @router.put("/{empresa_id}")
@@ -131,21 +153,42 @@ def cambiar_estado_suscripcion_empresarial_route(
 
 @router.get("/{empresa_id}/suscripcion")
 def ver_suscripcion_empresarial_route(
+    request: Request,
     empresa_id: int,
     db: Session = Depends(get_db),
-    _: int = Depends(require_admin),
+    admin_id: int = Depends(require_admin),
 ):
-    return ver_suscripcion_empresarial(db, empresa_id)
+    resultado = ver_suscripcion_empresarial(db, empresa_id)
+    log_audit_event(
+        db,
+        actor_user_id=admin_id,
+        action="read_company_subscription",
+        entity_type="empresa_suscripcion",
+        entity_id=empresa_id,
+        request=request,
+    )
+    return resultado
 
 
 @router.get("/{empresa_id}/empleados")
 def listar_empleados_route(
+    request: Request,
     empresa_id: int,
     activo: bool | None = Query(None),
     db: Session = Depends(get_db),
-    _: int = Depends(require_admin),
+    admin_id: int = Depends(require_admin),
 ):
-    return listar_empleados(db, empresa_id, activo)
+    resultado = listar_empleados(db, empresa_id, activo)
+    log_audit_event(
+        db,
+        actor_user_id=admin_id,
+        action="read_company_employees",
+        entity_type="empresa_empleados",
+        entity_id=empresa_id,
+        request=request,
+        metadata={"activo": activo, "count": len(resultado)},
+    )
+    return resultado
 
 
 @router.post("/{empresa_id}/empleados")
@@ -202,17 +245,38 @@ def eliminar_empleado_route(
 
 @router.get("/{empresa_id}/exportar-empleados")
 def exportar_empleados_route(
+    request: Request,
     empresa_id: int,
     db: Session = Depends(get_db),
-    _: int = Depends(require_admin),
+    admin_id: int = Depends(require_admin),
 ):
-    return exportar_empleados(db, empresa_id)
+    response = exportar_empleados(db, empresa_id)
+    log_audit_event(
+        db,
+        actor_user_id=admin_id,
+        action="export_company_employees_excel",
+        entity_type="empresa_empleados",
+        entity_id=empresa_id,
+        request=request,
+    )
+    return response
 
 
 @router.get("/{empresa_id}/exportar-excel")
 def exportar_empleados_alias_route(
+    request: Request,
     empresa_id: int,
     db: Session = Depends(get_db),
-    _: int = Depends(require_admin),
+    admin_id: int = Depends(require_admin),
 ):
-    return exportar_empleados(db, empresa_id)
+    response = exportar_empleados(db, empresa_id)
+    log_audit_event(
+        db,
+        actor_user_id=admin_id,
+        action="export_company_employees_excel",
+        entity_type="empresa_empleados",
+        entity_id=empresa_id,
+        request=request,
+        metadata={"alias": "exportar-excel"},
+    )
+    return response

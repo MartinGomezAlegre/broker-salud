@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
 from app.database import get_db
+from app.limiter import limiter
 from app.schemas.credenciales import CredencialVirtual, ValidacionBeneficio
 from app.services.credenciales import obtener_credencial_virtual, validar_beneficio_token
 
@@ -19,6 +20,7 @@ def obtener_credencial_virtual_route(
 
 
 @public_router.get("/beneficios/{token}", response_model=ValidacionBeneficio)
+@limiter.limit("30/minute")
 def validar_beneficio_token_route(
     token: str,
     request: Request,

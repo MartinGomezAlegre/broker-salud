@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.routers.admin_common import require_admin
 from app.schemas.admin import ActualizarPlan, CambiarEstadoSuscripcion, CambiarEstadoUsuario
+from app.services.audit import log_audit_event
 from app.services.admin.dashboard import dashboard, exportar_excel, metricas_grafico, obtener_alertas
 from app.services.admin.jobs import enviar_recordatorios, procesar_vencimientos
 from app.services.admin.reports import metricas_embudo, metricas_retencion, reporte_mensual
@@ -34,22 +35,44 @@ def metricas_grafico_route(
 
 @router.get("/usuarios")
 def listar_usuarios_route(
+    request: Request,
     buscar: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-    _: int = Depends(require_admin),
+    admin_id: int = Depends(require_admin),
 ):
-    return listar_usuarios(db, buscar, limit, offset)
+    resultado = listar_usuarios(db, buscar, limit, offset)
+    log_audit_event(
+        db,
+        actor_user_id=admin_id,
+        action="read_user_list",
+        entity_type="usuarios",
+        entity_id="collection",
+        request=request,
+        metadata={"buscar": buscar, "limit": limit, "offset": offset, "count": len(resultado)},
+    )
+    return resultado
 
 
 @router.get("/usuarios/{target_usuario_id}")
 def detalle_usuario_route(
+    request: Request,
     target_usuario_id: int,
     db: Session = Depends(get_db),
-    _: int = Depends(require_admin),
+    admin_id: int = Depends(require_admin),
 ):
-    return detalle_usuario(db, target_usuario_id)
+    resultado = detalle_usuario(db, target_usuario_id)
+    log_audit_event(
+        db,
+        actor_user_id=admin_id,
+        action="read_user_detail",
+        entity_type="usuario",
+        entity_id=target_usuario_id,
+        request=request,
+        metadata={"includes_beneficiarios": bool(resultado.get("beneficiarios"))},
+    )
+    return resultado
 
 
 @router.get("/suscripciones")
@@ -65,10 +88,20 @@ def listar_suscripciones_route(
 
 @router.get("/exportar-excel")
 def exportar_excel_route(
+    request: Request,
     db: Session = Depends(get_db),
-    _: int = Depends(require_admin),
+    admin_id: int = Depends(require_admin),
 ):
-    return exportar_excel(db)
+    response = exportar_excel(db)
+    log_audit_event(
+        db,
+        actor_user_id=admin_id,
+        action="export_subscriptions_excel",
+        entity_type="suscripciones",
+        entity_id="excel",
+        request=request,
+    )
+    return response
 
 
 @router.put("/planes/{plan_id}")
@@ -103,10 +136,11 @@ def cambiar_estado_usuario_route(
 def cambiar_estado_suscripcion_route(
     suscripcion_id: int,
     datos: CambiarEstadoSuscripcion,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     _: int = Depends(require_admin),
 ):
-    return cambiar_estado_suscripcion(db, suscripcion_id, datos)
+    return cambiar_estado_suscripcion(db, suscripcion_id, datos, background_tasks=background_tasks)
 
 
 @router.get("/metricas-retencion")

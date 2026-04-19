@@ -9,17 +9,15 @@ from jose import JWTError, jwt
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.auth import SECRET_KEY
+from app.settings import get_settings
 
 logger = logging.getLogger(__name__)
+settings = get_settings()
 
-QR_SECRET = os.getenv("QR_SECRET") or SECRET_KEY
+QR_SECRET = settings.qr_secret
 QR_ALGORITHM = "HS256"
 QR_TOKEN_SECONDS = int(os.getenv("QR_TOKEN_SECONDS", "60"))
-FRONTEND_URL = (
-    os.getenv("FRONTEND_URL")
-    or "https://celdoctor-waitlist.vercel.app"
-).rstrip("/")
+FRONTEND_URL = settings.frontend_url
 DEFAULT_BENEFIT_TYPE = os.getenv("QR_DEFAULT_BENEFIT_TYPE", "farmacia")
 DEFAULT_DISCOUNT_PERCENTAGE = int(os.getenv("FARMACIA_DESCUENTO_PORCENTAJE", "40"))
 _qr_validations_table_checked = False
@@ -85,7 +83,9 @@ def log_validation(
         return
 
     try:
-        db.execute(text("""
+        db.execute(
+            text(
+                """
             INSERT INTO qr_validations (
                 user_id,
                 benefit_type,
@@ -102,13 +102,16 @@ def log_validation(
                 :user_agent,
                 NOW()
             )
-        """), {
-            "user_id": usuario_id,
-            "benefit_type": benefit_type,
-            "validation_status": "valido" if valido else "rechazado",
-            "source_ip": source_ip,
-            "user_agent": user_agent,
-        })
+        """
+            ),
+            {
+                "user_id": usuario_id,
+                "benefit_type": benefit_type,
+                "validation_status": "valido" if valido else "rechazado",
+                "source_ip": source_ip,
+                "user_agent": user_agent,
+            },
+        )
         db.commit()
     except Exception as exc:
         logger.warning("No se pudo registrar qr_validation: %s", exc)
@@ -120,9 +123,13 @@ def _ensure_qr_validations_table(db: Session) -> bool:
     if _qr_validations_table_checked:
         return _qr_validations_table_available
 
-    row = db.execute(text("""
+    row = db.execute(
+        text(
+            """
         SELECT to_regclass('public.qr_validations') AS tabla
-    """)).fetchone()
+    """
+        )
+    ).fetchone()
     _qr_validations_table_available = bool(row and row.tabla)
     _qr_validations_table_checked = True
     return _qr_validations_table_available

@@ -13,7 +13,11 @@ from app.schemas.comercial import (
     DirectSellerCrear,
     LiquidacionCrear,
 )
-from app.services.comercial.accounts import create_commercial_user, update_commercial_user
+from app.services.comercial.accounts import (
+    create_commercial_user,
+    create_pending_commercial_user,
+    update_commercial_user,
+)
 from app.services.comercial.common import (
     COMMISSIONABLE_STATES,
     compute_commission_sql,
@@ -21,6 +25,8 @@ from app.services.comercial.common import (
     generate_referral_code,
     referral_code_exists,
 )
+from app.services.email import dispatch_email, enviar_email_invitacion_cuenta
+from app.services.invitations import create_account_invitation
 
 logger = logging.getLogger(__name__)
 
@@ -227,16 +233,17 @@ def listar_brokers(db: Session, estado: str | None, buscar: str | None):
         raise HTTPException(status_code=500, detail="No pudimos cargar brokers")
 
 
-def crear_broker(db: Session, datos: BrokerCrear):
+def crear_broker(db: Session, datos: BrokerCrear, admin_id: int | None = None):
     try:
         ensure_commercial_schema(db)
-        usuario_id = _resolve_admin_access_for_create(
+        usuario_id, invitation_email = _resolve_admin_access_for_create(
             db,
             target_role="broker",
             full_name=datos.nombre,
             usuario_id=datos.usuario_id,
             access_email=datos.access_email,
             access_password=datos.access_password,
+            invited_by_user_id=admin_id,
         )
         row = db.execute(text("""
             INSERT INTO brokers (nombre, contacto, comision_tipo, comision_valor, estado, fecha_alta, usuario_id)
@@ -253,6 +260,7 @@ def crear_broker(db: Session, datos: BrokerCrear):
         if usuario_id is not None:
             _set_usuario_role(db, usuario_id, "broker")
         db.commit()
+        _dispatch_invitation_email(invitation_email)
         return obtener_broker(db, row.id)
     except HTTPException:
         raise
@@ -261,7 +269,7 @@ def crear_broker(db: Session, datos: BrokerCrear):
         raise HTTPException(status_code=500, detail="No pudimos crear el broker")
 
 
-def actualizar_broker(db: Session, broker_id: int, datos: BrokerActualizar):
+def actualizar_broker(db: Session, broker_id: int, datos: BrokerActualizar, admin_id: int | None = None):
     try:
         ensure_commercial_schema(db)
         actual = db.execute(text("SELECT id, usuario_id FROM brokers WHERE id = :id"), {"id": broker_id}).fetchone()
@@ -271,7 +279,7 @@ def actualizar_broker(db: Session, broker_id: int, datos: BrokerActualizar):
         incoming = datos.model_dump(exclude_unset=True)
         payload = dict(incoming)
         previous_usuario_id = actual.usuario_id
-        next_usuario_id = _resolve_admin_access_for_update(
+        next_usuario_id, invitation_email = _resolve_admin_access_for_update(
             db,
             target_role="broker",
             full_name=payload.get("nombre") or obtener_broker(db, broker_id)["nombre"],
@@ -281,6 +289,7 @@ def actualizar_broker(db: Session, broker_id: int, datos: BrokerActualizar):
             access_password=payload.pop("access_password", None) if "access_password" in payload else None,
             current_table="brokers",
             current_id=broker_id,
+            invited_by_user_id=admin_id,
         )
         touched_access = any(field in incoming for field in ("usuario_id", "access_email", "access_password"))
         if "usuario_id" in incoming or next_usuario_id != actual.usuario_id:
@@ -298,6 +307,7 @@ def actualizar_broker(db: Session, broker_id: int, datos: BrokerActualizar):
                 if previous_usuario_id and previous_usuario_id != payload["usuario_id"]:
                     _clear_usuario_role_if_unlinked(db, previous_usuario_id, "broker")
             db.commit()
+            _dispatch_invitation_email(invitation_email)
         return obtener_broker(db, broker_id)
     except HTTPException:
         raise
@@ -506,16 +516,17 @@ def listar_direct_sellers(db: Session, estado: str | None, buscar: str | None):
         raise HTTPException(status_code=500, detail="No pudimos cargar vendedores directos")
 
 
-def crear_direct_seller(db: Session, datos: DirectSellerCrear):
+def crear_direct_seller(db: Session, datos: DirectSellerCrear, admin_id: int | None = None):
     try:
         ensure_commercial_schema(db)
-        usuario_id = _resolve_admin_access_for_create(
+        usuario_id, invitation_email = _resolve_admin_access_for_create(
             db,
             target_role="direct_seller",
             full_name=datos.nombre,
             usuario_id=datos.usuario_id,
             access_email=datos.access_email,
             access_password=datos.access_password,
+            invited_by_user_id=admin_id,
         )
         referral_code = datos.referral_code or generate_referral_code(db, datos.nombre)
         if referral_code_exists(db, referral_code):
@@ -540,6 +551,7 @@ def crear_direct_seller(db: Session, datos: DirectSellerCrear):
         if usuario_id is not None:
             _set_usuario_role(db, usuario_id, "direct_seller")
         db.commit()
+        _dispatch_invitation_email(invitation_email)
         return obtener_direct_seller(db, row.id)
     except HTTPException:
         raise
@@ -548,7 +560,7 @@ def crear_direct_seller(db: Session, datos: DirectSellerCrear):
         raise HTTPException(status_code=500, detail="No pudimos crear el vendedor directo")
 
 
-def actualizar_direct_seller(db: Session, seller_id: int, datos: DirectSellerActualizar):
+def actualizar_direct_seller(db: Session, seller_id: int, datos: DirectSellerActualizar, admin_id: int | None = None):
     try:
         ensure_commercial_schema(db)
         actual = db.execute(text("""
@@ -561,7 +573,7 @@ def actualizar_direct_seller(db: Session, seller_id: int, datos: DirectSellerAct
 
         payload = datos.model_dump(exclude_unset=True)
         previous_usuario_id = actual.usuario_id
-        next_usuario_id = _resolve_admin_access_for_update(
+        next_usuario_id, invitation_email = _resolve_admin_access_for_update(
             db,
             target_role="direct_seller",
             full_name=payload.get("nombre") or obtener_direct_seller(db, seller_id)["nombre"],
@@ -571,6 +583,7 @@ def actualizar_direct_seller(db: Session, seller_id: int, datos: DirectSellerAct
             access_password=payload.pop("access_password", None) if "access_password" in payload else None,
             current_table="direct_sellers",
             current_id=seller_id,
+            invited_by_user_id=admin_id,
         )
         touched_access = any(field in payload or field in datos.model_dump(exclude_unset=True) for field in ("usuario_id", "access_email", "access_password"))
         if "usuario_id" in datos.model_dump(exclude_unset=True) or next_usuario_id != actual.usuario_id:
@@ -594,6 +607,7 @@ def actualizar_direct_seller(db: Session, seller_id: int, datos: DirectSellerAct
                 if previous_usuario_id and previous_usuario_id != payload["usuario_id"]:
                     _clear_usuario_role_if_unlinked(db, previous_usuario_id, "direct_seller")
             db.commit()
+            _dispatch_invitation_email(invitation_email)
 
         return obtener_direct_seller(db, seller_id)
     except HTTPException:
@@ -824,27 +838,37 @@ def _resolve_admin_access_for_create(
     usuario_id: int | None,
     access_email: str | None,
     access_password: str | None,
-) -> int | None:
+    invited_by_user_id: int | None,
+) -> tuple[int | None, dict | None]:
     if usuario_id is not None:
         _ensure_usuario_assignable(db, usuario_id, target_role)
-        return usuario_id
+        return usuario_id, None
 
     if access_email and access_password:
-        return create_commercial_user(
+        return (
+            create_commercial_user(
+                db,
+                full_name=full_name,
+                email=access_email,
+                password=access_password,
+                role=target_role,
+            ),
+            None,
+        )
+
+    if access_email:
+        return _prepare_invited_commercial_access(
             db,
+            target_role=target_role,
             full_name=full_name,
-            email=access_email,
-            password=access_password,
-            role=target_role,
+            access_email=access_email,
+            invited_by_user_id=invited_by_user_id,
         )
 
-    if access_email or access_password:
-        raise HTTPException(
-            status_code=400,
-            detail="Para crear un acceso comercial nuevo necesitamos email y contrasena inicial",
-        )
+    if access_password:
+        raise HTTPException(status_code=400, detail="Necesitamos un email para poder definir el acceso comercial")
 
-    return None
+    return None, None
 
 
 def _resolve_admin_access_for_update(
@@ -858,10 +882,11 @@ def _resolve_admin_access_for_update(
     access_password: str | None,
     current_table: str,
     current_id: int,
-) -> int | None:
+    invited_by_user_id: int | None,
+) -> tuple[int | None, dict | None]:
     if usuario_id is not None:
         _ensure_usuario_assignable(db, usuario_id, target_role, current_table, current_id)
-        return usuario_id
+        return usuario_id, None
 
     if access_email or access_password:
         if current_usuario_id:
@@ -874,23 +899,76 @@ def _resolve_admin_access_for_update(
                 password=access_password,
                 role=target_role,
             )
-            return current_usuario_id
+            return current_usuario_id, None
 
         if access_email and access_password:
-            return create_commercial_user(
-                db,
-                full_name=full_name,
-                email=access_email,
-                password=access_password,
-                role=target_role,
+            return (
+                create_commercial_user(
+                    db,
+                    full_name=full_name,
+                    email=access_email,
+                    password=access_password,
+                    role=target_role,
+                ),
+                None,
             )
 
-        raise HTTPException(
-            status_code=400,
-            detail="Para crear un nuevo acceso comercial necesitamos email y contrasena inicial",
-        )
+        if access_email:
+            return _prepare_invited_commercial_access(
+                db,
+                target_role=target_role,
+                full_name=full_name,
+                access_email=access_email,
+                invited_by_user_id=invited_by_user_id,
+            )
 
-    return current_usuario_id
+        raise HTTPException(status_code=400, detail="Necesitamos un email para poder crear el acceso comercial")
+
+    return current_usuario_id, None
+
+
+def _prepare_invited_commercial_access(
+    db: Session,
+    *,
+    target_role: str,
+    full_name: str,
+    access_email: str,
+    invited_by_user_id: int | None,
+) -> tuple[int, dict]:
+    user_id = create_pending_commercial_user(
+        db,
+        full_name=full_name,
+        email=access_email,
+        role=target_role,
+    )
+    invitation = create_account_invitation(
+        db,
+        user_id=user_id,
+        email=access_email,
+        full_name=full_name,
+        role=target_role,
+        invited_by_user_id=invited_by_user_id,
+        context_type=target_role,
+    )
+    return user_id, {
+        "email": access_email,
+        "full_name": full_name,
+        "token": invitation["token"],
+        "role": target_role,
+    }
+
+
+def _dispatch_invitation_email(invitation_email: dict | None) -> None:
+    if not invitation_email:
+        return
+    dispatch_email(
+        None,
+        enviar_email_invitacion_cuenta,
+        invitation_email["email"],
+        invitation_email["full_name"],
+        invitation_email["token"],
+        invitation_email["role"],
+    )
 
 
 def _ensure_usuario_assignable(

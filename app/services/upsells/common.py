@@ -27,7 +27,7 @@ def ensure_upsells_table(db: Session) -> None:
     if not existe or not existe.tabla:
         raise HTTPException(
             status_code=503,
-            detail="Falta la migracion de base de datos para upsells_seguro",
+            detail="Falta una migracion de Alembic para upsells_seguro. Ejecuta alembic upgrade head.",
         )
 
     _upsells_checked = True

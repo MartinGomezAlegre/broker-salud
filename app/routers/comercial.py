@@ -124,9 +124,9 @@ def listar_brokers_route(
 def crear_broker_route(
     datos: BrokerCrear,
     db: Session = Depends(get_db),
-    _: int = Depends(require_admin),
+    admin_id: int = Depends(require_admin),
 ):
-    return crear_broker(db, datos)
+    return crear_broker(db, datos, admin_id)
 
 
 @admin_router.put("/brokers/{broker_id}")
@@ -134,9 +134,9 @@ def actualizar_broker_route(
     broker_id: int,
     datos: BrokerActualizar,
     db: Session = Depends(get_db),
-    _: int = Depends(require_admin),
+    admin_id: int = Depends(require_admin),
 ):
-    return actualizar_broker(db, broker_id, datos)
+    return actualizar_broker(db, broker_id, datos, admin_id)
 
 
 @admin_router.get("/broker-sellers")
@@ -183,9 +183,9 @@ def listar_direct_sellers_route(
 def crear_direct_seller_route(
     datos: DirectSellerCrear,
     db: Session = Depends(get_db),
-    _: int = Depends(require_admin),
+    admin_id: int = Depends(require_admin),
 ):
-    return crear_direct_seller(db, datos)
+    return crear_direct_seller(db, datos, admin_id)
 
 
 @admin_router.put("/direct-sellers/{seller_id}")
@@ -193,9 +193,9 @@ def actualizar_direct_seller_route(
     seller_id: int,
     datos: DirectSellerActualizar,
     db: Session = Depends(get_db),
-    _: int = Depends(require_admin),
+    admin_id: int = Depends(require_admin),
 ):
-    return actualizar_direct_seller(db, seller_id, datos)
+    return actualizar_direct_seller(db, seller_id, datos, admin_id)
 
 
 @admin_router.get("/ventas")

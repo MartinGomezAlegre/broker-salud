@@ -38,7 +38,7 @@ def ensure_fecha_vencimiento(db: Session) -> None:
     if not existe:
         raise HTTPException(
             status_code=503,
-            detail="Falta la migracion de base de datos para fecha_vencimiento en suscripciones",
+            detail="Falta una migracion de Alembic para fecha_vencimiento en suscripciones. Ejecuta alembic upgrade head.",
         )
 
     _fecha_vencimiento_checked = True

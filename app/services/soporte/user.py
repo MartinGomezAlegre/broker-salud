@@ -1,10 +1,11 @@
 import logging
 
-from fastapi import HTTPException
+from fastapi import BackgroundTasks, HTTPException
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.schemas.soporte import TicketCrear
+from app.services.email import dispatch_email, enviar_email_ticket_recibido
 from app.services.soporte.common import (
     columna_mensaje_ticket,
     obtener_columnas_tickets,
@@ -16,7 +17,12 @@ from app.services.soporte.common import (
 logger = logging.getLogger(__name__)
 
 
-def crear_ticket_service(db: Session, usuario_id: int, datos: TicketCrear):
+def crear_ticket_service(
+    db: Session,
+    usuario_id: int,
+    datos: TicketCrear,
+    background_tasks: BackgroundTasks | None = None,
+):
     if len(datos.asunto.strip()) < 5:
         raise HTTPException(status_code=400, detail="El asunto debe tener al menos 5 caracteres")
     if len(datos.asunto) > 200:
@@ -69,12 +75,7 @@ def crear_ticket_service(db: Session, usuario_id: int, datos: TicketCrear):
             {"id": usuario_id},
         ).fetchone()
 
-        try:
-            from app.services.email import enviar_email_ticket_recibido
-
-            enviar_email_ticket_recibido(usuario.email, usuario.nombre, ticket.id, ticket.asunto)
-        except Exception as exc:
-            logger.error("Error enviando email ticket recibido: %s", exc)
+        dispatch_email(background_tasks, enviar_email_ticket_recibido, usuario.email, usuario.nombre, ticket.id, ticket.asunto)
 
         return {
             "id": ticket.id,
