@@ -19,6 +19,19 @@ def detalle_empresa(db: Session, empresa_id: int):
         if not empresa:
             raise HTTPException(status_code=404, detail="Empresa no encontrada")
 
+        admin_access = None
+        if empresa.admin_user_id:
+            admin_access = db.execute(
+                text(
+                    """
+                    SELECT id, nombre, apellido, email
+                    FROM usuarios
+                    WHERE id = :id
+                    """
+                ),
+                {"id": empresa.admin_user_id},
+            ).fetchone()
+
         suscripcion = db.execute(text("""
             SELECT se.*, p.nombre AS plan_nombre
             FROM suscripciones_empresariales se
@@ -64,6 +77,11 @@ def detalle_empresa(db: Session, empresa_id: int):
             "contacto_cargo": empresa.contacto_cargo,
             "contacto_email": empresa.email_contacto,
             "contacto_telefono": empresa.telefono,
+            "admin_user_id": empresa.admin_user_id,
+            "admin_access_email": admin_access.email if admin_access else None,
+            "admin_access_name": " ".join(
+                part for part in [admin_access.nombre if admin_access else None, admin_access.apellido if admin_access else None] if part
+            ).strip() or None,
             "activo": empresa.activo,
             "created_at": serialize_value(empresa.created_at),
             "plan_nombre": suscripcion.plan_nombre if suscripcion else None,

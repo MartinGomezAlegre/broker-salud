@@ -5,6 +5,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.schemas.empresas import EmpresaCrear
+from app.services.comercial.accounts import create_commercial_user
 from app.services.empresas.common import empresa_to_dict
 
 logger = logging.getLogger(__name__)
@@ -34,11 +35,13 @@ def listar_empresas(
             LEFT JOIN suscripciones_empresariales se
                    ON se.empresa_id = e.id AND se.estado NOT IN ('cancelada', 'vencida')
             LEFT JOIN planes p ON p.id = se.plan_id
+            LEFT JOIN usuarios admin_u ON admin_u.id = e.admin_user_id
             {where}
             GROUP BY e.id, e.razon_social, e.cuit, e.nombre_comercial, e.rubro,
                      e.direccion, e.localidad, e.provincia, e.responsabilidad_iva,
-                     e.email_contacto, e.contacto_nombre, e.contacto_cargo, e.telefono,
+                     e.email_contacto, e.contacto_nombre, e.contacto_cargo, e.telefono, e.admin_user_id,
                      e.activo, e.created_at,
+                     admin_u.id, admin_u.nombre, admin_u.apellido, admin_u.email,
                      se.estado, se.plan_id, p.nombre, se.precio_por_empleado, se.precio_total,
                      se.periodicidad, se.fecha_inicio, se.fecha_fin, se.proximo_cobro
         """
@@ -49,6 +52,10 @@ def listar_empresas(
                    e.direccion, e.localidad, e.provincia, e.responsabilidad_iva,
                    e.email_contacto, e.contacto_nombre, e.contacto_cargo, e.telefono,
                    e.activo, e.created_at,
+                   admin_u.id AS admin_user_id,
+                   admin_u.nombre AS admin_nombre,
+                   admin_u.apellido AS admin_apellido,
+                   admin_u.email AS admin_access_email,
                    COUNT(em.id) FILTER (WHERE em.activo = true) AS empleados_activos,
                    COUNT(em.id) AS cantidad_empleados,
                    se.estado AS estado_suscripcion,
@@ -78,6 +85,9 @@ def listar_empresas(
                 "contacto_nombre": row.contacto_nombre,
                 "contacto_cargo": row.contacto_cargo,
                 "contacto_telefono": row.telefono,
+                "admin_user_id": row.admin_user_id,
+                "admin_access_email": row.admin_access_email,
+                "admin_access_name": " ".join(part for part in [row.admin_nombre, row.admin_apellido] if part).strip() or None,
                 "activo": row.activo,
                 "created_at": row.created_at.isoformat() if row.created_at else None,
                 "empleados_activos": row.empleados_activos or 0,
@@ -103,6 +113,14 @@ def listar_empresas(
 
 def crear_empresa(db: Session, datos: EmpresaCrear):
     try:
+        admin_access_email = _clean_optional(datos.admin_access_email)
+        admin_access_password = _clean_optional(datos.admin_access_password)
+        if bool(admin_access_email) != bool(admin_access_password):
+            raise HTTPException(
+                status_code=400,
+                detail="Para crear el acceso empresa_admin necesitas email y contrasena inicial.",
+            )
+
         existente = db.execute(
             text("SELECT id FROM empresas WHERE cuit = :cuit"),
             {"cuit": datos.cuit},
@@ -110,13 +128,25 @@ def crear_empresa(db: Session, datos: EmpresaCrear):
         if existente:
             raise HTTPException(status_code=400, detail="Ya existe una empresa con ese CUIT")
 
+        admin_user_id = None
+        if admin_access_email and admin_access_password:
+            admin_user_id = create_commercial_user(
+                db,
+                full_name=datos.contacto_nombre,
+                email=admin_access_email,
+                password=admin_access_password,
+                role="empresa_admin",
+            )
+
         result = db.execute(text("""
             INSERT INTO empresas
               (razon_social, cuit, nombre_comercial, rubro, direccion, localidad,
-               provincia, responsabilidad_iva, telefono, email_contacto, contacto_nombre, contacto_cargo, activo)
+               provincia, responsabilidad_iva, telefono, email_contacto, contacto_nombre, contacto_cargo,
+               admin_user_id, activo)
             VALUES
               (:razon_social, :cuit, :nombre_comercial, :rubro, :direccion, :localidad,
-               :provincia, :responsabilidad_iva, :telefono, :email_contacto, :contacto_nombre, :contacto_cargo, true)
+               :provincia, :responsabilidad_iva, :telefono, :email_contacto, :contacto_nombre, :contacto_cargo,
+               :admin_user_id, true)
             RETURNING id
         """), {
             "razon_social": datos.razon_social,
@@ -131,6 +161,7 @@ def crear_empresa(db: Session, datos: EmpresaCrear):
             "email_contacto": datos.email_contacto,
             "contacto_nombre": datos.contacto_nombre,
             "contacto_cargo": datos.contacto_cargo,
+            "admin_user_id": admin_user_id,
         }).fetchone()
         db.commit()
 
@@ -144,3 +175,10 @@ def crear_empresa(db: Session, datos: EmpresaCrear):
     except Exception as exc:
         logger.error("Error interno: %s", exc, exc_info=True)
         raise HTTPException(status_code=500, detail="Error interno del servidor.")
+
+
+def _clean_optional(value: str | None) -> str | None:
+    if value is None:
+        return None
+    clean = value.strip()
+    return clean or None

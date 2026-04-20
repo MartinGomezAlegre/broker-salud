@@ -21,6 +21,12 @@ def _parse_csv(value: str | None) -> tuple[str, ...]:
     return tuple(item.strip() for item in value.split(",") if item.strip())
 
 
+def _parse_bool(value: str | None, default: bool) -> bool:
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass(frozen=True)
 class Settings:
     app_env: str
@@ -33,6 +39,9 @@ class Settings:
     redis_url: str | None
     job_queue_name: str
     job_retry_limit: int
+    payment_manual_enabled: bool
+    mercadopago_webhook_secret: str | None
+    mercadopago_webhook_tolerance_seconds: int
     docs_enabled: bool
     redoc_enabled: bool
 
@@ -63,6 +72,15 @@ def _build_settings() -> Settings:
     redis_url = os.getenv("REDIS_URL", "").strip() or None
     job_queue_name = os.getenv("JOB_QUEUE_NAME", "celdoctor:jobs").strip() or "celdoctor:jobs"
     job_retry_limit = max(0, int(os.getenv("JOB_RETRY_LIMIT", "3")))
+    payment_manual_enabled = _parse_bool(
+        os.getenv("PAYMENT_MANUAL_ENABLED"),
+        default=app_env != "production",
+    )
+    mercadopago_webhook_secret = os.getenv("MERCADOPAGO_WEBHOOK_SECRET", "").strip() or None
+    mercadopago_webhook_tolerance_seconds = max(
+        30,
+        int(os.getenv("MERCADOPAGO_WEBHOOK_TOLERANCE_SECONDS", "300")),
+    )
 
     docs_enabled = os.getenv("ENABLE_DOCS", "true").strip().lower() == "true"
     if app_env == "production":
@@ -83,6 +101,9 @@ def _build_settings() -> Settings:
         redis_url=redis_url,
         job_queue_name=job_queue_name,
         job_retry_limit=job_retry_limit,
+        payment_manual_enabled=payment_manual_enabled,
+        mercadopago_webhook_secret=mercadopago_webhook_secret,
+        mercadopago_webhook_tolerance_seconds=mercadopago_webhook_tolerance_seconds,
         docs_enabled=docs_enabled,
         redoc_enabled=redoc_enabled,
     )

@@ -17,6 +17,8 @@ class EmpresaCrear(BaseModel):
     email_contacto: str = Field(validation_alias=AliasChoices("email_contacto", "contacto_email"))
     contacto_nombre: str
     contacto_cargo: Optional[str] = None
+    admin_access_email: Optional[str] = None
+    admin_access_password: Optional[str] = None
 
 
 class EmpresaActualizar(BaseModel):
@@ -32,6 +34,8 @@ class EmpresaActualizar(BaseModel):
     email_contacto: Optional[str] = Field(default=None, validation_alias=AliasChoices("email_contacto", "contacto_email"))
     contacto_nombre: Optional[str] = None
     contacto_cargo: Optional[str] = None
+    admin_access_email: Optional[str] = None
+    admin_access_password: Optional[str] = None
 
 
 class CambiarEstadoEmpresa(BaseModel):

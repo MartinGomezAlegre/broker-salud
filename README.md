@@ -157,6 +157,9 @@ ENABLE_REDOC=true
 QR_DEFAULT_BENEFIT_TYPE=farmacia
 FARMACIA_DESCUENTO_PORCENTAJE=40
 SERVICE_TOKEN=changeme_internal_service_token
+PAYMENT_MANUAL_ENABLED=true
+MERCADOPAGO_WEBHOOK_SECRET=
+MERCADOPAGO_WEBHOOK_TOLERANCE_SECONDS=300
 RESEND_API_KEY=...
 ADMIN_EMAIL=admin@celdoctor.com
 DB_POOL_SIZE=5
@@ -175,6 +178,8 @@ UVICORN_KEEP_ALIVE=30
 - `REDIS_URL` ya esta prevista para el siguiente paso de rate limiting y jobs compartidos.
 - `SERVICE_TOKEN` protege los endpoints internos de cron.
 - `JOB_QUEUE_NAME` y `JOB_RETRY_LIMIT` gobiernan la cola Redis simple usada por emails y jobs operativos.
+- `PAYMENT_MANUAL_ENABLED` permite apagar el alta manual de pagos en produccion.
+- `MERCADOPAGO_WEBHOOK_SECRET` se usa para validar la firma del webhook.
 
 ## Migraciones
 
@@ -295,6 +300,30 @@ curl -X POST https://api.celdoctor.com/internal/jobs/procesar-vencimientos ^
 ```
 
 En Railway, la idea es que Cron pegue a esos endpoints y el worker se encargue del trabajo pesado.
+
+## Skeleton de pagos
+
+Ya quedo preparada la base para integrar Mercado Pago sin romper el flujo actual:
+
+- `POST /pagos/intentos`
+- `GET /pagos/suscripciones/{id}/estado`
+- `GET /suscripciones/{id}/estado-pago`
+- `POST /webhooks/mercadopago`
+
+Y se agregaron tablas nuevas por Alembic:
+
+- `intentos_pago`
+- `webhooks_recibidos`
+- `pagos_procesados`
+
+La idea de este bloque es simple:
+
+- crear un intento de pago asociado a una suscripcion pendiente
+- recibir el webhook y guardarlo rapido
+- procesarlo de forma idempotente por `payment_id`
+- activar la suscripcion cuando el estado llegue como `approved`
+
+Todavia no esta conectada la creacion real de preferencias/preapproval con Mercado Pago, pero la estructura ya quedo lista para meter esa integracion sin tener que redisenar el backend.
 
 ## Backups y recuperacion
 

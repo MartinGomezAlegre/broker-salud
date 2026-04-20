@@ -6,8 +6,10 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.schemas.facturacion import PagoManual
+from app.settings import get_settings
 
 logger = logging.getLogger(__name__)
+settings = get_settings()
 
 
 def listar_pagos(
@@ -76,6 +78,12 @@ def pago_manual(
     datos: PagoManual,
 ):
     try:
+        if not settings.payment_manual_enabled:
+            raise HTTPException(
+                status_code=403,
+                detail="El pago manual esta deshabilitado en este entorno",
+            )
+
         plan = db.execute(
             text("SELECT id, precio_mensual FROM planes WHERE id = :id AND activo = true"),
             {"id": datos.plan_id},

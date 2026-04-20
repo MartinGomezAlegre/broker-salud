@@ -12,10 +12,12 @@ from app.routers import catalogo
 from app.routers import comercial
 from app.routers import credenciales
 from app.routers import empresas
+from app.routers import empresa_admin
 from app.routers import facturacion
 from app.routers import internal_jobs
 from app.routers import invitaciones
 from app.routers import leads
+from app.routers import pagos
 from app.routers import planes
 from app.routers import soporte
 from app.routers import suscripciones
@@ -54,7 +56,9 @@ app.include_router(invitaciones.router)
 app.include_router(suscripciones.router)
 app.include_router(admin.router)
 app.include_router(empresas.router)
+app.include_router(empresa_admin.router)
 app.include_router(facturacion.router)
+app.include_router(pagos.router)
 app.include_router(catalogo.router)
 app.include_router(catalogo.cupones_alias_router)
 app.include_router(soporte.router)
@@ -67,6 +71,7 @@ app.include_router(upsells.router)
 app.include_router(upsells.admin_router)
 app.include_router(credenciales.router)
 app.include_router(credenciales.public_router)
+app.include_router(pagos.public_router)
 app.include_router(comercial.router)
 app.include_router(comercial.admin_router)
 
