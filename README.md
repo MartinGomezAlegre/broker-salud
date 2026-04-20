@@ -296,6 +296,59 @@ curl -X POST https://api.celdoctor.com/internal/jobs/procesar-vencimientos ^
 
 En Railway, la idea es que Cron pegue a esos endpoints y el worker se encargue del trabajo pesado.
 
+## Backups y recuperacion
+
+Esto es critico para produccion. La recomendacion para CELDOCTOR es trabajar con **dos capas de backup**:
+
+### 1. Backups nativos de Railway
+
+Para el servicio Postgres en Railway:
+
+- activar schedule **daily**
+- activar schedule **weekly**
+- activar schedule **monthly**
+- crear un backup manual antes de cada migracion Alembic importante
+- bloquear snapshots clave para que no se borren por error
+
+Runbook minimo sugerido:
+
+1. antes de migrar: crear backup manual
+2. correr `alembic upgrade head`
+3. si algo sale mal: restaurar snapshot en Railway y revisar el deploy antes de aplicar
+
+### 2. Backups logicos propios
+
+Este repo incluye scripts en:
+
+- `tools/backups/backup_postgres.py`
+- `tools/backups/restore_postgres.py`
+- `tools/backups/README.md`
+
+Ejemplo de dump logico:
+
+```bash
+python tools/backups/backup_postgres.py --label pre_migracion
+```
+
+Eso genera:
+
+- archivo `.dump`
+- checksum `.sha256`
+- metadata `.json`
+
+Ejemplo de restore:
+
+```bash
+python tools/backups/restore_postgres.py backups/celdoctor_pre_migracion_20260419_120000.dump --yes
+```
+
+### Politica recomendada
+
+- Railway snapshots para recuperacion rapida
+- dump logico previo a migraciones y cambios grandes
+- restore probado al menos una vez en staging
+- nunca depender de una sola capa de backup
+
 ## Credenciales QR
 
 El backend genera y valida credenciales digitales. Variables relevantes:

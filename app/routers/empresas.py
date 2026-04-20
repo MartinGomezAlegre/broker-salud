@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, File, Query, Request, UploadFile
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -26,11 +26,13 @@ from app.services.empresas.employees import (
     actualizar_empleado,
     agregar_empleado,
     agregar_empleados_bulk,
+    agregar_empleados_bulk_xlsx,
+    analizar_empleados_bulk_xlsx,
     cambiar_estado_empleado,
     eliminar_empleado,
     listar_empleados,
 )
-from app.services.empresas.exports import exportar_empleados, exportar_empresas
+from app.services.empresas.exports import exportar_empleados, exportar_empresas, exportar_plantilla_empleados_bulk
 from app.services.empresas.metrics import metricas_empresas
 from app.services.empresas.subscriptions import (
     cambiar_estado_suscripcion_empresarial,
@@ -211,6 +213,26 @@ def agregar_empleados_bulk_route(
     return agregar_empleados_bulk(db, empresa_id, datos)
 
 
+@router.post("/{empresa_id}/empleados/bulk/dry-run")
+async def analizar_empleados_bulk_route(
+    empresa_id: int,
+    archivo: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _: int = Depends(require_admin),
+):
+    return analizar_empleados_bulk_xlsx(db, empresa_id, await archivo.read())
+
+
+@router.post("/{empresa_id}/empleados/bulk/upload")
+async def agregar_empleados_bulk_xlsx_route(
+    empresa_id: int,
+    archivo: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _: int = Depends(require_admin),
+):
+    return agregar_empleados_bulk_xlsx(db, empresa_id, await archivo.read())
+
+
 @router.put("/{empresa_id}/empleados/{empleado_id}")
 def actualizar_empleado_route(
     empresa_id: int,
@@ -260,6 +282,16 @@ def exportar_empleados_route(
         request=request,
     )
     return response
+
+
+@router.get("/{empresa_id}/empleados/plantilla")
+def exportar_plantilla_empleados_route(
+    empresa_id: int,
+    db: Session = Depends(get_db),
+    _: int = Depends(require_admin),
+):
+    detalle_empresa(db, empresa_id)
+    return exportar_plantilla_empleados_bulk()
 
 
 @router.get("/{empresa_id}/exportar-excel")

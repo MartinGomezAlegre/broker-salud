@@ -28,6 +28,22 @@ def listar_empresas(
             params["q"] = f"%{buscar}%"
 
         where = ("WHERE " + " AND ".join(condiciones)) if condiciones else ""
+        base_query = f"""
+            FROM empresas e
+            LEFT JOIN empleados_empresa em ON em.empresa_id = e.id
+            LEFT JOIN suscripciones_empresariales se
+                   ON se.empresa_id = e.id AND se.estado NOT IN ('cancelada', 'vencida')
+            LEFT JOIN planes p ON p.id = se.plan_id
+            {where}
+            GROUP BY e.id, e.razon_social, e.cuit, e.nombre_comercial, e.rubro,
+                     e.direccion, e.localidad, e.provincia, e.responsabilidad_iva,
+                     e.email_contacto, e.contacto_nombre, e.contacto_cargo, e.telefono,
+                     e.activo, e.created_at,
+                     se.estado, se.plan_id, p.nombre, se.precio_por_empleado, se.precio_total,
+                     se.periodicidad, se.fecha_inicio, se.fecha_fin, se.proximo_cobro
+        """
+
+        total = db.execute(text(f"SELECT COUNT(*) FROM (SELECT e.id {base_query}) empresas_paginadas"), params).scalar() or 0
         rows = db.execute(text(f"""
             SELECT e.id, e.razon_social, e.cuit, e.nombre_comercial, e.rubro,
                    e.direccion, e.localidad, e.provincia, e.responsabilidad_iva,
@@ -43,22 +59,11 @@ def listar_empresas(
                    se.periodicidad,
                    se.fecha_inicio AS fecha_inicio_suscripcion,
                    COALESCE(se.fecha_fin, se.proximo_cobro) AS fecha_vencimiento
-            FROM empresas e
-            LEFT JOIN empleados_empresa em ON em.empresa_id = e.id
-            LEFT JOIN suscripciones_empresariales se
-                   ON se.empresa_id = e.id AND se.estado NOT IN ('cancelada', 'vencida')
-            LEFT JOIN planes p ON p.id = se.plan_id
-            {where}
-            GROUP BY e.id, e.razon_social, e.cuit, e.nombre_comercial, e.rubro,
-                     e.direccion, e.localidad, e.provincia, e.responsabilidad_iva,
-                     e.email_contacto, e.contacto_nombre, e.contacto_cargo, e.telefono,
-                     e.activo, e.created_at,
-                     se.estado, se.plan_id, p.nombre, se.precio_por_empleado, se.precio_total,
-                     se.periodicidad, se.fecha_inicio, se.fecha_fin, se.proximo_cobro
+            {base_query}
             ORDER BY e.created_at DESC LIMIT :limit OFFSET :offset
         """), params).fetchall()
 
-        return [
+        items = [
             {
                 "id": row.id,
                 "razon_social": row.razon_social,
@@ -88,6 +93,7 @@ def listar_empresas(
             }
             for row in rows
         ]
+        return {"items": items, "total": total, "limit": limit, "offset": offset}
     except HTTPException:
         raise
     except Exception as exc:

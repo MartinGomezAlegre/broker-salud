@@ -15,15 +15,29 @@ ESTADOS_PERMITIDOS = {"activa", "cancelada", "cancelacion_programada", "pendient
 def listar_suscripciones(
     db: Session,
     estado: str | None,
+    buscar: str | None,
     limit: int,
     offset: int,
 ):
     try:
-        filtro = "AND s.estado = :estado" if estado else ""
         params: dict = {"limit": limit, "offset": offset}
+        condiciones = []
         if estado:
             params["estado"] = estado
+            condiciones.append("s.estado = :estado")
+        if buscar:
+            params["buscar"] = f"%{buscar.strip()}%"
+            condiciones.append("(u.nombre ILIKE :buscar OR u.apellido ILIKE :buscar OR u.email ILIKE :buscar OR p.nombre ILIKE :buscar)")
 
+        where = f"WHERE {' AND '.join(condiciones)}" if condiciones else ""
+        base_query = f"""
+            FROM suscripciones s
+            JOIN usuarios u ON u.id = s.usuario_id
+            JOIN planes p ON p.id = s.plan_id
+            {where}
+        """
+
+        total = db.execute(text(f"SELECT COUNT(*) {base_query}"), params).scalar() or 0
         rows = db.execute(text(f"""
             SELECT s.id,
                    u.nombre || ' ' || u.apellido AS usuario_nombre,
@@ -33,14 +47,11 @@ def listar_suscripciones(
                    s.precio_pagado,
                    s.fecha_inicio,
                    s.created_at
-            FROM suscripciones s
-            JOIN usuarios u ON u.id = s.usuario_id
-            JOIN planes p ON p.id = s.plan_id
-            WHERE 1=1 {filtro}
+            {base_query}
             ORDER BY s.created_at DESC LIMIT :limit OFFSET :offset
         """), params).fetchall()
 
-        return [
+        items = [
             {
                 "id": row.id,
                 "nombre_completo": row.usuario_nombre,
@@ -53,6 +64,7 @@ def listar_suscripciones(
             }
             for row in rows
         ]
+        return {"items": items, "total": total, "limit": limit, "offset": offset}
     except HTTPException:
         raise
     except Exception as exc:

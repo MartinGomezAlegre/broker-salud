@@ -3,12 +3,16 @@ import io
 import logging
 
 import openpyxl
+from openpyxl.styles import Font
 from fastapi import HTTPException
 from fastapi.responses import Response
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
+
+PLANTILLA_BULK_EMPLEADOS_HEADERS = ["Nombre", "Apellido", "DNI", "Email", "Cargo", "Telefono"]
+PLANTILLA_BULK_EMPLEADOS_EJEMPLO = ["Juan", "Perez", "12345678", "juan@empresa.com", "Administracion", "1150012233"]
 
 
 def exportar_empleados(db: Session, empresa_id: int):
@@ -111,6 +115,34 @@ def exportar_empresas(db: Session):
         )
     except HTTPException:
         raise
+    except Exception as exc:
+        logger.error("Error interno: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
+
+
+def exportar_plantilla_empleados_bulk():
+    try:
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Plantilla empleados"
+        ws.append(PLANTILLA_BULK_EMPLEADOS_HEADERS)
+        ws.append(PLANTILLA_BULK_EMPLEADOS_EJEMPLO)
+
+        for cell in ws[1]:
+            cell.font = Font(bold=True)
+
+        ws.freeze_panes = "A2"
+
+        buffer = io.BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+
+        fecha = date.today().isoformat()
+        return Response(
+            content=buffer.read(),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename=plantilla_empleados_{fecha}.xlsx"},
+        )
     except Exception as exc:
         logger.error("Error interno: %s", exc, exc_info=True)
         raise HTTPException(status_code=500, detail="Error interno del servidor.")

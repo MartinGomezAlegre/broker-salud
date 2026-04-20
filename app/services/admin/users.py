@@ -13,75 +13,63 @@ logger = logging.getLogger(__name__)
 def listar_usuarios(
     db: Session,
     buscar: str | None,
+    filtro: str | None,
     limit: int,
     offset: int,
 ):
     try:
         params: dict = {"limit": limit, "offset": offset}
-        if buscar:
-            params["q"] = f"%{buscar}%"
-            rows = db.execute(text("""
-                SELECT id, nombre, apellido, email, telefono, dni,
-                       fecha_nacimiento, rol, activo, created_at,
-                       plan_nombre, estado_suscripcion
-                FROM (
-                    SELECT u.id, u.nombre, u.apellido, u.email, u.telefono, u.dni,
-                           u.fecha_nacimiento, u.rol, u.activo, u.created_at,
-                           sub.plan_nombre, sub.estado_suscripcion
-                    FROM usuarios u
-                    LEFT JOIN LATERAL (
-                        SELECT p.nombre AS plan_nombre,
-                               s.estado AS estado_suscripcion
-                        FROM suscripciones s
-                        JOIN planes p ON p.id = s.plan_id
-                        WHERE s.usuario_id = u.id
-                        ORDER BY
-                            CASE s.estado
-                                WHEN 'activa' THEN 1
-                                WHEN 'pendiente_pago' THEN 2
-                                ELSE 3
-                            END,
-                            COALESCE(s.fecha_vencimiento, s.created_at) DESC,
-                            s.created_at DESC
-                        LIMIT 1
-                    ) sub ON true
-                ) usuarios_con_suscripcion
-                WHERE COALESCE(rol, 'cliente') NOT IN ('broker', 'direct_seller', 'broker_seller')
-                  AND (nombre ILIKE :q OR apellido ILIKE :q OR email ILIKE :q)
-                ORDER BY created_at DESC LIMIT :limit OFFSET :offset
-            """), params).fetchall()
-        else:
-            rows = db.execute(text("""
-                SELECT id, nombre, apellido, email, telefono, dni,
-                       fecha_nacimiento, rol, activo, created_at,
-                       plan_nombre, estado_suscripcion
-                FROM (
-                    SELECT u.id, u.nombre, u.apellido, u.email, u.telefono, u.dni,
-                           u.fecha_nacimiento, u.rol, u.activo, u.created_at,
-                           sub.plan_nombre, sub.estado_suscripcion
-                    FROM usuarios u
-                    LEFT JOIN LATERAL (
-                        SELECT p.nombre AS plan_nombre,
-                               s.estado AS estado_suscripcion
-                        FROM suscripciones s
-                        JOIN planes p ON p.id = s.plan_id
-                        WHERE s.usuario_id = u.id
-                        ORDER BY
-                            CASE s.estado
-                                WHEN 'activa' THEN 1
-                                WHEN 'pendiente_pago' THEN 2
-                                ELSE 3
-                            END,
-                            COALESCE(s.fecha_vencimiento, s.created_at) DESC,
-                            s.created_at DESC
-                        LIMIT 1
-                    ) sub ON true
-                ) usuarios_con_suscripcion
-                WHERE COALESCE(rol, 'cliente') NOT IN ('broker', 'direct_seller', 'broker_seller')
-                ORDER BY created_at DESC LIMIT :limit OFFSET :offset
-            """), params).fetchall()
+        condiciones = ["COALESCE(rol, 'cliente') NOT IN ('broker', 'direct_seller', 'broker_seller')"]
 
-        return [
+        if buscar:
+            params["q"] = f"%{buscar.strip()}%"
+            condiciones.append("(nombre ILIKE :q OR apellido ILIKE :q OR email ILIKE :q)")
+
+        if filtro == "activos":
+            condiciones.append("activo = true")
+        elif filtro == "inactivos":
+            condiciones.append("activo = false")
+        elif filtro == "con_plan":
+            condiciones.append("estado_suscripcion IS NOT NULL")
+        elif filtro == "sin_plan":
+            condiciones.append("estado_suscripcion IS NULL")
+
+        base_query = f"""
+            FROM (
+                SELECT u.id, u.nombre, u.apellido, u.email, u.telefono, u.dni,
+                       u.fecha_nacimiento, u.rol, u.activo, u.created_at,
+                       sub.plan_nombre, sub.estado_suscripcion
+                FROM usuarios u
+                LEFT JOIN LATERAL (
+                    SELECT p.nombre AS plan_nombre,
+                           s.estado AS estado_suscripcion
+                    FROM suscripciones s
+                    JOIN planes p ON p.id = s.plan_id
+                    WHERE s.usuario_id = u.id
+                    ORDER BY
+                        CASE s.estado
+                            WHEN 'activa' THEN 1
+                            WHEN 'pendiente_pago' THEN 2
+                            ELSE 3
+                        END,
+                        COALESCE(s.fecha_vencimiento, s.created_at) DESC,
+                        s.created_at DESC
+                    LIMIT 1
+                ) sub ON true
+            ) usuarios_con_suscripcion
+            WHERE {" AND ".join(condiciones)}
+        """
+
+        total = db.execute(text(f"SELECT COUNT(*) {base_query}"), params).scalar() or 0
+        rows = db.execute(text(f"""
+            SELECT id, nombre, apellido, email, telefono, dni,
+                   fecha_nacimiento, rol, activo, created_at,
+                   plan_nombre, estado_suscripcion
+            {base_query}
+            ORDER BY created_at DESC LIMIT :limit OFFSET :offset
+        """), params).fetchall()
+
+        items = [
             {
                 "id": row.id,
                 "nombre": row.nombre,
@@ -98,6 +86,7 @@ def listar_usuarios(
             }
             for row in rows
         ]
+        return {"items": items, "total": total, "limit": limit, "offset": offset}
     except HTTPException:
         raise
     except Exception as exc:

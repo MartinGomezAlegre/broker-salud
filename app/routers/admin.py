@@ -37,12 +37,13 @@ def metricas_grafico_route(
 def listar_usuarios_route(
     request: Request,
     buscar: str | None = Query(None),
+    filtro: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     admin_id: int = Depends(require_admin),
 ):
-    resultado = listar_usuarios(db, buscar, limit, offset)
+    resultado = listar_usuarios(db, buscar, filtro, limit, offset)
     log_audit_event(
         db,
         actor_user_id=admin_id,
@@ -50,7 +51,7 @@ def listar_usuarios_route(
         entity_type="usuarios",
         entity_id="collection",
         request=request,
-        metadata={"buscar": buscar, "limit": limit, "offset": offset, "count": len(resultado)},
+        metadata={"buscar": buscar, "filtro": filtro, "limit": limit, "offset": offset, "count": len(resultado["items"])},
     )
     return resultado
 
@@ -78,12 +79,13 @@ def detalle_usuario_route(
 @router.get("/suscripciones")
 def listar_suscripciones_route(
     estado: str | None = Query(None),
+    buscar: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     _: int = Depends(require_admin),
 ):
-    return listar_suscripciones(db, estado, limit, offset)
+    return listar_suscripciones(db, estado, buscar, limit, offset)
 
 
 @router.get("/exportar-excel")
