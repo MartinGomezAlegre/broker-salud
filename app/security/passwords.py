@@ -9,7 +9,7 @@ COMMON_PASSWORDS = {
     "admin123",
     "admin1234",
     "qwerty123",
-    "abc123456",
+    "abc123456",  # pragma: allowlist secret
     "contrasena",
     "contrasenia",
     "password",

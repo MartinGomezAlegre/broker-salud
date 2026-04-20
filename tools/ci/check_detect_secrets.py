@@ -1,22 +1,63 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 import subprocess
 import sys
 
 
-EXCLUDE_PATTERN = r"(^venv/|^\.git/|^__pycache__/|^alembic/versions/__pycache__/|^app/__pycache__/|^tools/capacity/)"
+EXCLUDE_PATTERN = re.compile(
+    r"(^venv/|^\.git/|^__pycache__/|^alembic/versions/__pycache__/|^app/__pycache__/|^tools/capacity/)"
+)
+IGNORED_TRACKED_FILES = {
+    ".env.example",
+    "README.md",
+}
+
+
+def _tracked_files() -> list[str]:
+    result = subprocess.run(
+        ["git", "ls-files"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr or result.stdout or "No se pudo listar archivos versionados")
+
+    files = []
+    for raw_path in result.stdout.splitlines():
+        path = raw_path.strip()
+        if not path:
+            continue
+        if path in IGNORED_TRACKED_FILES:
+            continue
+        if EXCLUDE_PATTERN.search(path):
+            continue
+        files.append(path)
+
+    return files
 
 
 def main() -> int:
+    detect_secrets_executable = os.path.join(
+        os.path.dirname(sys.executable),
+        "detect-secrets.exe" if os.name == "nt" else "detect-secrets",
+    )
+    tracked_files = _tracked_files()
+
+    if not tracked_files:
+        print("detect-secrets sin archivos para escanear")
+        return 0
+
     result = subprocess.run(
         [
-            "detect-secrets",
+            detect_secrets_executable,
             "scan",
-            "--all-files",
             "--force-use-all-plugins",
-            "--exclude-files",
-            EXCLUDE_PATTERN,
+            *tracked_files,
         ],
         capture_output=True,
         text=True,
