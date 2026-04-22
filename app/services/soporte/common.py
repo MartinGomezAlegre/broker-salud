@@ -12,7 +12,7 @@ ESTADOS_TICKET = {"abierto", "respondido", "cerrado"}
 
 
 def require_admin_dep(
-    usuario_id: int = Depends(require_roles("admin")),
+    usuario_id: int = Depends(require_roles("admin", "gestor_interno")),
 ):
     return usuario_id
 

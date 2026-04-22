@@ -5,9 +5,11 @@ from fastapi import HTTPException
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.schemas.admin import CambiarEstadoUsuario
+from app.schemas.admin import CambiarEstadoUsuario, CambiarRolUsuario
 
 logger = logging.getLogger(__name__)
+
+ROLES_ADMIN_MUTABLES = {"cliente", "admin", "gestor_interno", "empresa_admin"}
 
 
 def listar_usuarios(
@@ -224,6 +226,75 @@ def cambiar_estado_usuario(
             "email": usuario.email,
             "activo": datos.activo,
             "rol": usuario.rol,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Error interno: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
+
+
+def cambiar_rol_usuario(
+    db: Session,
+    actor_user_id: int,
+    usuario_id: int,
+    datos: CambiarRolUsuario,
+):
+    try:
+        nuevo_rol = (datos.rol or "").strip()
+        if nuevo_rol not in ROLES_ADMIN_MUTABLES:
+            raise HTTPException(status_code=400, detail="Rol no permitido para este cambio.")
+
+        usuario = db.execute(
+            text("SELECT id, nombre, apellido, email, rol, activo FROM usuarios WHERE id = :id"),
+            {"id": usuario_id},
+        ).fetchone()
+
+        if not usuario:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+        if usuario.rol == nuevo_rol:
+            return {
+                "id": usuario.id,
+                "nombre": usuario.nombre,
+                "apellido": usuario.apellido,
+                "email": usuario.email,
+                "activo": usuario.activo,
+                "rol": usuario.rol,
+            }
+
+        if actor_user_id == usuario_id and usuario.rol == "admin" and nuevo_rol != "admin":
+            raise HTTPException(status_code=400, detail="No podes quitarte a vos mismo el rol admin.")
+
+        db.execute(
+            text("UPDATE usuarios SET rol = :rol WHERE id = :id"),
+            {"rol": nuevo_rol, "id": usuario_id},
+        )
+
+        db.execute(
+            text(
+                """
+                INSERT INTO auditoria (accion, tabla_afectada, registro_id, datos_anteriores, datos_nuevos)
+                VALUES (:accion, 'usuarios', :registro_id, :datos_anteriores, :datos_nuevos)
+                """
+            ),
+            {
+                "accion": "cambiar_rol",
+                "registro_id": usuario_id,
+                "datos_anteriores": json.dumps({"rol": usuario.rol}),
+                "datos_nuevos": json.dumps({"rol": nuevo_rol}),
+            },
+        )
+
+        db.commit()
+
+        return {
+            "id": usuario.id,
+            "nombre": usuario.nombre,
+            "apellido": usuario.apellido,
+            "email": usuario.email,
+            "activo": usuario.activo,
+            "rol": nuevo_rol,
         }
     except HTTPException:
         raise

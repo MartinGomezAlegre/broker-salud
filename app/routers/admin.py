@@ -2,14 +2,14 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.routers.admin_common import require_admin
-from app.schemas.admin import ActualizarPlan, CambiarEstadoSuscripcion, CambiarEstadoUsuario
+from app.routers.admin_common import require_admin, require_admin_panel
+from app.schemas.admin import ActualizarPlan, CambiarEstadoSuscripcion, CambiarEstadoUsuario, CambiarRolUsuario
 from app.services.audit import log_audit_event
 from app.services.admin.dashboard import dashboard, exportar_excel, metricas_grafico, obtener_alertas
 from app.services.admin.jobs import enviar_recordatorios, procesar_vencimientos
 from app.services.admin.reports import metricas_embudo, metricas_retencion, reporte_mensual
 from app.services.admin.subscriptions import actualizar_plan, cambiar_estado_suscripcion, listar_suscripciones
-from app.services.admin.users import cambiar_estado_usuario, detalle_usuario, listar_usuarios
+from app.services.admin.users import cambiar_estado_usuario, cambiar_rol_usuario, detalle_usuario, listar_usuarios
 
 router = APIRouter(
     prefix="/admin",
@@ -41,7 +41,7 @@ def listar_usuarios_route(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-    admin_id: int = Depends(require_admin),
+    admin_id: int = Depends(require_admin_panel),
 ):
     resultado = listar_usuarios(db, buscar, filtro, limit, offset)
     log_audit_event(
@@ -61,7 +61,7 @@ def detalle_usuario_route(
     request: Request,
     target_usuario_id: int,
     db: Session = Depends(get_db),
-    admin_id: int = Depends(require_admin),
+    admin_id: int = Depends(require_admin_panel),
 ):
     resultado = detalle_usuario(db, target_usuario_id)
     log_audit_event(
@@ -129,9 +129,19 @@ def cambiar_estado_usuario_route(
     usuario_id: int,
     datos: CambiarEstadoUsuario,
     db: Session = Depends(get_db),
-    _: int = Depends(require_admin),
+    _: int = Depends(require_admin_panel),
 ):
     return cambiar_estado_usuario(db, usuario_id, datos)
+
+
+@router.put("/usuarios/{usuario_id}/rol")
+def cambiar_rol_usuario_route(
+    usuario_id: int,
+    datos: CambiarRolUsuario,
+    db: Session = Depends(get_db),
+    admin_id: int = Depends(require_admin),
+):
+    return cambiar_rol_usuario(db, admin_id, usuario_id, datos)
 
 
 @router.put("/suscripciones/{suscripcion_id}/estado")

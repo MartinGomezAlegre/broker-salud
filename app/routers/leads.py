@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.limiter import limiter
-from app.routers.admin_common import require_admin
+from app.routers.admin_common import require_admin_panel
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +88,7 @@ def crear_lead_empresarial(
 def listar_leads(
     estado: Optional[str] = Query(None),
     db: Session = Depends(get_db),
-    _: int = Depends(require_admin),
+    _: int = Depends(require_admin_panel),
 ):
     try:
         params: dict = {}
@@ -132,7 +132,7 @@ def actualizar_lead(
     lead_id: int,
     datos: LeadEmpresarialActualizar,
     db: Session = Depends(get_db),
-    _: int = Depends(require_admin),
+    _: int = Depends(require_admin_panel),
 ):
     try:
         lead = db.execute(

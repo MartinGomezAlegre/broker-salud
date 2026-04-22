@@ -13,6 +13,10 @@ class CambiarEstadoUsuario(BaseModel):
     motivo: Optional[str] = None
 
 
+class CambiarRolUsuario(BaseModel):
+    rol: str
+
+
 class CambiarEstadoSuscripcion(BaseModel):
     estado: str
     motivo: Optional[str] = None

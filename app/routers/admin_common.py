@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_user
 from app.database import get_db
 
+ADMIN_PANEL_ROLES = ("admin", "gestor_interno")
+
 
 def require_roles(*roles: str) -> Callable:
     def dependency(
@@ -29,5 +31,11 @@ def require_roles(*roles: str) -> Callable:
 
 def require_admin(
     usuario_id: int = Depends(require_roles("admin")),
+):
+    return usuario_id
+
+
+def require_admin_panel(
+    usuario_id: int = Depends(require_roles(*ADMIN_PANEL_ROLES)),
 ):
     return usuario_id

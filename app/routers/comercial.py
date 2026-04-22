@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.routers.admin_common import require_admin, require_roles
+from app.routers.admin_common import require_admin, require_admin_panel, require_roles
 from app.schemas.comercial import (
     BrokerActualizar,
     BrokerCrear,
@@ -96,7 +96,7 @@ def actualizar_broker_seller_desde_broker_route(
 @admin_router.get("/resumen")
 def resumen_comercial_route(
     db: Session = Depends(get_db),
-    _: int = Depends(require_admin),
+    _: int = Depends(require_admin_panel),
 ):
     return resumen_comercial(db)
 
@@ -105,7 +105,7 @@ def resumen_comercial_route(
 def listar_usuarios_comerciales_route(
     buscar: str | None = Query(None),
     db: Session = Depends(get_db),
-    _: int = Depends(require_admin),
+    _: int = Depends(require_admin_panel),
 ):
     return listar_usuarios_comerciales(db, buscar)
 
@@ -115,7 +115,7 @@ def listar_brokers_route(
     estado: str | None = Query(None),
     buscar: str | None = Query(None),
     db: Session = Depends(get_db),
-    _: int = Depends(require_admin),
+    _: int = Depends(require_admin_panel),
 ):
     return listar_brokers(db, estado, buscar)
 
@@ -124,7 +124,7 @@ def listar_brokers_route(
 def crear_broker_route(
     datos: BrokerCrear,
     db: Session = Depends(get_db),
-    admin_id: int = Depends(require_admin),
+    admin_id: int = Depends(require_admin_panel),
 ):
     return crear_broker(db, datos, admin_id)
 
@@ -134,7 +134,7 @@ def actualizar_broker_route(
     broker_id: int,
     datos: BrokerActualizar,
     db: Session = Depends(get_db),
-    admin_id: int = Depends(require_admin),
+    admin_id: int = Depends(require_admin_panel),
 ):
     return actualizar_broker(db, broker_id, datos, admin_id)
 
@@ -145,7 +145,7 @@ def listar_broker_sellers_route(
     estado: str | None = Query(None),
     buscar: str | None = Query(None),
     db: Session = Depends(get_db),
-    _: int = Depends(require_admin),
+    _: int = Depends(require_admin_panel),
 ):
     return listar_broker_sellers(db, broker_id, estado, buscar)
 
@@ -154,7 +154,7 @@ def listar_broker_sellers_route(
 def crear_broker_seller_route(
     datos: BrokerSellerCrear,
     db: Session = Depends(get_db),
-    _: int = Depends(require_admin),
+    _: int = Depends(require_admin_panel),
 ):
     return crear_broker_seller(db, datos)
 
@@ -164,7 +164,7 @@ def actualizar_broker_seller_route(
     seller_id: int,
     datos: BrokerSellerActualizar,
     db: Session = Depends(get_db),
-    _: int = Depends(require_admin),
+    _: int = Depends(require_admin_panel),
 ):
     return actualizar_broker_seller(db, seller_id, datos)
 
@@ -174,7 +174,7 @@ def listar_direct_sellers_route(
     estado: str | None = Query(None),
     buscar: str | None = Query(None),
     db: Session = Depends(get_db),
-    _: int = Depends(require_admin),
+    _: int = Depends(require_admin_panel),
 ):
     return listar_direct_sellers(db, estado, buscar)
 
@@ -183,7 +183,7 @@ def listar_direct_sellers_route(
 def crear_direct_seller_route(
     datos: DirectSellerCrear,
     db: Session = Depends(get_db),
-    admin_id: int = Depends(require_admin),
+    admin_id: int = Depends(require_admin_panel),
 ):
     return crear_direct_seller(db, datos, admin_id)
 
@@ -193,7 +193,7 @@ def actualizar_direct_seller_route(
     seller_id: int,
     datos: DirectSellerActualizar,
     db: Session = Depends(get_db),
-    admin_id: int = Depends(require_admin),
+    admin_id: int = Depends(require_admin_panel),
 ):
     return actualizar_direct_seller(db, seller_id, datos, admin_id)
 
@@ -204,7 +204,7 @@ def listar_ventas_route(
     estado: str | None = Query(None),
     buscar: str | None = Query(None),
     db: Session = Depends(get_db),
-    _: int = Depends(require_admin),
+    _: int = Depends(require_admin_panel),
 ):
     return listar_ventas_referidas(db, canal, estado, buscar)
 
@@ -212,7 +212,7 @@ def listar_ventas_route(
 @admin_router.get("/liquidaciones")
 def listar_liquidaciones_route(
     db: Session = Depends(get_db),
-    _: int = Depends(require_admin),
+    _: int = Depends(require_admin_panel),
 ):
     return listar_liquidaciones(db)
 
@@ -221,6 +221,6 @@ def listar_liquidaciones_route(
 def crear_liquidacion_route(
     datos: LiquidacionCrear,
     db: Session = Depends(get_db),
-    admin_id: int = Depends(require_admin),
+    admin_id: int = Depends(require_admin_panel),
 ):
     return crear_liquidacion(db, datos, admin_id)

@@ -79,6 +79,28 @@ class CambiarEstadoEmpleado(BaseModel):
     motivo: Optional[str] = None
 
 
+class EmpresaAcuerdoCrear(BaseModel):
+    tipo: str
+    titulo: str
+    descripcion: Optional[str] = None
+    estado: Optional[str] = "vigente"
+    fecha_firma: Optional[date] = None
+    fecha_vencimiento: Optional[date] = None
+    archivo_url: Optional[str] = None
+    notas: Optional[str] = None
+
+
+class EmpresaAcuerdoActualizar(BaseModel):
+    tipo: Optional[str] = None
+    titulo: Optional[str] = None
+    descripcion: Optional[str] = None
+    estado: Optional[str] = None
+    fecha_firma: Optional[date] = None
+    fecha_vencimiento: Optional[date] = None
+    archivo_url: Optional[str] = None
+    notas: Optional[str] = None
+
+
 class BulkEmpleados(BaseModel):
     datos: Optional[str] = None
     empleados: Optional[List[EmpleadoCrear]] = None

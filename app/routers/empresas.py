@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, File, Query, Request, UploadFile
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.routers.admin_common import require_admin
+from app.routers.admin_common import require_admin, require_admin_panel
 from app.schemas.empresas import (
     BulkEmpleados,
     CambiarEstadoEmpleado,
@@ -10,11 +10,19 @@ from app.schemas.empresas import (
     CambiarEstadoSuscripcionEmpresarial,
     EmpleadoActualizar,
     EmpleadoCrear,
+    EmpresaAcuerdoActualizar,
+    EmpresaAcuerdoCrear,
     EmpresaActualizar,
     EmpresaCrear,
     SuscripcionEmpresarialCrear,
 )
 from app.services.audit import log_audit_event
+from app.services.empresas.agreements import (
+    actualizar_acuerdo_empresa,
+    crear_acuerdo_empresa,
+    eliminar_acuerdo_empresa,
+    listar_acuerdos_empresa,
+)
 from app.services.empresas.companies import (
     actualizar_empresa,
     cambiar_estado_empresa,
@@ -53,7 +61,7 @@ def listar_empresas_route(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-    _: int = Depends(require_admin),
+    _: int = Depends(require_admin_panel),
 ):
     return listar_empresas(db, activo, buscar, limit, offset)
 
@@ -62,7 +70,7 @@ def listar_empresas_route(
 def crear_empresa_route(
     datos: EmpresaCrear,
     db: Session = Depends(get_db),
-    _: int = Depends(require_admin),
+    _: int = Depends(require_admin_panel),
 ):
     return crear_empresa(db, datos)
 
@@ -71,7 +79,7 @@ def crear_empresa_route(
 def exportar_empresas_route(
     request: Request,
     db: Session = Depends(get_db),
-    admin_id: int = Depends(require_admin),
+    admin_id: int = Depends(require_admin_panel),
 ):
     response = exportar_empresas(db)
     log_audit_event(
@@ -98,7 +106,7 @@ def detalle_empresa_route(
     request: Request,
     empresa_id: int,
     db: Session = Depends(get_db),
-    admin_id: int = Depends(require_admin),
+    admin_id: int = Depends(require_admin_panel),
 ):
     resultado = detalle_empresa(db, empresa_id)
     log_audit_event(
@@ -118,7 +126,7 @@ def actualizar_empresa_route(
     empresa_id: int,
     datos: EmpresaActualizar,
     db: Session = Depends(get_db),
-    _: int = Depends(require_admin),
+    _: int = Depends(require_admin_panel),
 ):
     return actualizar_empresa(db, empresa_id, datos)
 
@@ -128,7 +136,7 @@ def cambiar_estado_empresa_route(
     empresa_id: int,
     datos: CambiarEstadoEmpresa,
     db: Session = Depends(get_db),
-    _: int = Depends(require_admin),
+    _: int = Depends(require_admin_panel),
 ):
     return cambiar_estado_empresa(db, empresa_id, datos)
 
@@ -138,7 +146,7 @@ def crear_suscripcion_empresarial_route(
     empresa_id: int,
     datos: SuscripcionEmpresarialCrear,
     db: Session = Depends(get_db),
-    _: int = Depends(require_admin),
+    _: int = Depends(require_admin_panel),
 ):
     return crear_suscripcion_empresarial(db, empresa_id, datos)
 
@@ -148,7 +156,7 @@ def cambiar_estado_suscripcion_empresarial_route(
     empresa_id: int,
     datos: CambiarEstadoSuscripcionEmpresarial,
     db: Session = Depends(get_db),
-    _: int = Depends(require_admin),
+    _: int = Depends(require_admin_panel),
 ):
     return cambiar_estado_suscripcion_empresarial(db, empresa_id, datos)
 
@@ -158,7 +166,7 @@ def ver_suscripcion_empresarial_route(
     request: Request,
     empresa_id: int,
     db: Session = Depends(get_db),
-    admin_id: int = Depends(require_admin),
+    admin_id: int = Depends(require_admin_panel),
 ):
     resultado = ver_suscripcion_empresarial(db, empresa_id)
     log_audit_event(
@@ -178,7 +186,7 @@ def listar_empleados_route(
     empresa_id: int,
     activo: bool | None = Query(None),
     db: Session = Depends(get_db),
-    admin_id: int = Depends(require_admin),
+    admin_id: int = Depends(require_admin_panel),
 ):
     resultado = listar_empleados(db, empresa_id, activo)
     log_audit_event(
@@ -198,7 +206,7 @@ def agregar_empleado_route(
     empresa_id: int,
     datos: EmpleadoCrear,
     db: Session = Depends(get_db),
-    _: int = Depends(require_admin),
+    _: int = Depends(require_admin_panel),
 ):
     return agregar_empleado(db, empresa_id, datos)
 
@@ -208,7 +216,7 @@ def agregar_empleados_bulk_route(
     empresa_id: int,
     datos: BulkEmpleados,
     db: Session = Depends(get_db),
-    _: int = Depends(require_admin),
+    _: int = Depends(require_admin_panel),
 ):
     return agregar_empleados_bulk(db, empresa_id, datos)
 
@@ -218,7 +226,7 @@ async def analizar_empleados_bulk_route(
     empresa_id: int,
     archivo: UploadFile = File(...),
     db: Session = Depends(get_db),
-    _: int = Depends(require_admin),
+    _: int = Depends(require_admin_panel),
 ):
     return analizar_empleados_bulk_xlsx(db, empresa_id, await archivo.read())
 
@@ -228,7 +236,7 @@ async def agregar_empleados_bulk_xlsx_route(
     empresa_id: int,
     archivo: UploadFile = File(...),
     db: Session = Depends(get_db),
-    _: int = Depends(require_admin),
+    _: int = Depends(require_admin_panel),
 ):
     return agregar_empleados_bulk_xlsx(db, empresa_id, await archivo.read())
 
@@ -239,7 +247,7 @@ def actualizar_empleado_route(
     empleado_id: int,
     datos: EmpleadoActualizar,
     db: Session = Depends(get_db),
-    _: int = Depends(require_admin),
+    _: int = Depends(require_admin_panel),
 ):
     return actualizar_empleado(db, empresa_id, empleado_id, datos)
 
@@ -250,7 +258,7 @@ def cambiar_estado_empleado_route(
     empleado_id: int,
     datos: CambiarEstadoEmpleado,
     db: Session = Depends(get_db),
-    _: int = Depends(require_admin),
+    _: int = Depends(require_admin_panel),
 ):
     return cambiar_estado_empleado(db, empresa_id, empleado_id, datos)
 
@@ -260,7 +268,7 @@ def eliminar_empleado_route(
     empresa_id: int,
     empleado_id: int,
     db: Session = Depends(get_db),
-    _: int = Depends(require_admin),
+    _: int = Depends(require_admin_panel),
 ):
     return eliminar_empleado(db, empresa_id, empleado_id)
 
@@ -270,7 +278,7 @@ def exportar_empleados_route(
     request: Request,
     empresa_id: int,
     db: Session = Depends(get_db),
-    admin_id: int = Depends(require_admin),
+    admin_id: int = Depends(require_admin_panel),
 ):
     response = exportar_empleados(db, empresa_id)
     log_audit_event(
@@ -288,7 +296,7 @@ def exportar_empleados_route(
 def exportar_plantilla_empleados_route(
     empresa_id: int,
     db: Session = Depends(get_db),
-    _: int = Depends(require_admin),
+    _: int = Depends(require_admin_panel),
 ):
     detalle_empresa(db, empresa_id)
     return exportar_plantilla_empleados_bulk()
@@ -299,7 +307,7 @@ def exportar_empleados_alias_route(
     request: Request,
     empresa_id: int,
     db: Session = Depends(get_db),
-    admin_id: int = Depends(require_admin),
+    admin_id: int = Depends(require_admin_panel),
 ):
     response = exportar_empleados(db, empresa_id)
     log_audit_event(
@@ -312,3 +320,54 @@ def exportar_empleados_alias_route(
         metadata={"alias": "exportar-excel"},
     )
     return response
+
+
+@router.get("/{empresa_id}/acuerdos")
+def listar_acuerdos_empresa_route(
+    request: Request,
+    empresa_id: int,
+    db: Session = Depends(get_db),
+    admin_id: int = Depends(require_admin),
+):
+    resultado = listar_acuerdos_empresa(db, empresa_id)
+    log_audit_event(
+        db,
+        actor_user_id=admin_id,
+        action="read_company_agreements",
+        entity_type="empresa_acuerdos",
+        entity_id=empresa_id,
+        request=request,
+        metadata={"count": len(resultado)},
+    )
+    return resultado
+
+
+@router.post("/{empresa_id}/acuerdos")
+def crear_acuerdo_empresa_route(
+    empresa_id: int,
+    datos: EmpresaAcuerdoCrear,
+    db: Session = Depends(get_db),
+    _: int = Depends(require_admin),
+):
+    return crear_acuerdo_empresa(db, empresa_id, datos)
+
+
+@router.put("/{empresa_id}/acuerdos/{acuerdo_id}")
+def actualizar_acuerdo_empresa_route(
+    empresa_id: int,
+    acuerdo_id: int,
+    datos: EmpresaAcuerdoActualizar,
+    db: Session = Depends(get_db),
+    _: int = Depends(require_admin),
+):
+    return actualizar_acuerdo_empresa(db, empresa_id, acuerdo_id, datos)
+
+
+@router.delete("/{empresa_id}/acuerdos/{acuerdo_id}")
+def eliminar_acuerdo_empresa_route(
+    empresa_id: int,
+    acuerdo_id: int,
+    db: Session = Depends(get_db),
+    _: int = Depends(require_admin),
+):
+    return eliminar_acuerdo_empresa(db, empresa_id, acuerdo_id)
