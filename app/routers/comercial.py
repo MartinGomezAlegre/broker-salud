@@ -10,9 +10,17 @@ from app.schemas.comercial import (
     BrokerPortalSellerCrear,
     BrokerSellerActualizar,
     BrokerSellerCrear,
+    ComercialAcuerdoActualizar,
+    ComercialAcuerdoCrear,
     DirectSellerActualizar,
     DirectSellerCrear,
     LiquidacionCrear,
+)
+from app.services.comercial.agreements import (
+    actualizar_acuerdo_comercial,
+    crear_acuerdo_comercial,
+    eliminar_acuerdo_comercial,
+    listar_acuerdos_comerciales,
 )
 from app.services.comercial.broker_team import (
     actualizar_broker_seller_desde_broker,
@@ -139,6 +147,46 @@ def actualizar_broker_route(
     return actualizar_broker(db, broker_id, datos, admin_id)
 
 
+@admin_router.get("/brokers/{broker_id}/acuerdos")
+def listar_acuerdos_broker_route(
+    broker_id: int,
+    db: Session = Depends(get_db),
+    _: int = Depends(require_admin),
+):
+    return listar_acuerdos_comerciales(db, "broker", broker_id)
+
+
+@admin_router.post("/brokers/{broker_id}/acuerdos")
+def crear_acuerdo_broker_route(
+    broker_id: int,
+    datos: ComercialAcuerdoCrear,
+    db: Session = Depends(get_db),
+    _: int = Depends(require_admin),
+):
+    return crear_acuerdo_comercial(db, "broker", broker_id, datos)
+
+
+@admin_router.put("/brokers/{broker_id}/acuerdos/{acuerdo_id}")
+def actualizar_acuerdo_broker_route(
+    broker_id: int,
+    acuerdo_id: int,
+    datos: ComercialAcuerdoActualizar,
+    db: Session = Depends(get_db),
+    _: int = Depends(require_admin),
+):
+    return actualizar_acuerdo_comercial(db, "broker", broker_id, acuerdo_id, datos)
+
+
+@admin_router.delete("/brokers/{broker_id}/acuerdos/{acuerdo_id}")
+def eliminar_acuerdo_broker_route(
+    broker_id: int,
+    acuerdo_id: int,
+    db: Session = Depends(get_db),
+    _: int = Depends(require_admin),
+):
+    return eliminar_acuerdo_comercial(db, "broker", broker_id, acuerdo_id)
+
+
 @admin_router.get("/broker-sellers")
 def listar_broker_sellers_route(
     broker_id: int | None = Query(None),
@@ -196,6 +244,46 @@ def actualizar_direct_seller_route(
     admin_id: int = Depends(require_admin_panel),
 ):
     return actualizar_direct_seller(db, seller_id, datos, admin_id)
+
+
+@admin_router.get("/direct-sellers/{seller_id}/acuerdos")
+def listar_acuerdos_direct_seller_route(
+    seller_id: int,
+    db: Session = Depends(get_db),
+    _: int = Depends(require_admin),
+):
+    return listar_acuerdos_comerciales(db, "direct_seller", seller_id)
+
+
+@admin_router.post("/direct-sellers/{seller_id}/acuerdos")
+def crear_acuerdo_direct_seller_route(
+    seller_id: int,
+    datos: ComercialAcuerdoCrear,
+    db: Session = Depends(get_db),
+    _: int = Depends(require_admin),
+):
+    return crear_acuerdo_comercial(db, "direct_seller", seller_id, datos)
+
+
+@admin_router.put("/direct-sellers/{seller_id}/acuerdos/{acuerdo_id}")
+def actualizar_acuerdo_direct_seller_route(
+    seller_id: int,
+    acuerdo_id: int,
+    datos: ComercialAcuerdoActualizar,
+    db: Session = Depends(get_db),
+    _: int = Depends(require_admin),
+):
+    return actualizar_acuerdo_comercial(db, "direct_seller", seller_id, acuerdo_id, datos)
+
+
+@admin_router.delete("/direct-sellers/{seller_id}/acuerdos/{acuerdo_id}")
+def eliminar_acuerdo_direct_seller_route(
+    seller_id: int,
+    acuerdo_id: int,
+    db: Session = Depends(get_db),
+    _: int = Depends(require_admin),
+):
+    return eliminar_acuerdo_comercial(db, "direct_seller", seller_id, acuerdo_id)
 
 
 @admin_router.get("/ventas")

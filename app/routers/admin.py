@@ -3,11 +3,19 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.routers.admin_common import require_admin, require_admin_panel
-from app.schemas.admin import ActualizarPlan, CambiarEstadoSuscripcion, CambiarEstadoUsuario, CambiarRolUsuario
+from app.schemas.admin import (
+    ActualizarPlan,
+    CambiarEstadoSuscripcion,
+    CambiarEstadoUsuario,
+    CambiarRolUsuario,
+    PersonalActualizar,
+    PersonalCrear,
+)
 from app.services.audit import log_audit_event
 from app.services.admin.dashboard import dashboard, exportar_excel, metricas_grafico, obtener_alertas
 from app.services.admin.jobs import enviar_recordatorios, procesar_vencimientos
 from app.services.admin.reports import metricas_embudo, metricas_retencion, reporte_mensual
+from app.services.admin.staff import actualizar_personal, crear_personal, listar_personal
 from app.services.admin.subscriptions import actualizar_plan, cambiar_estado_suscripcion, listar_suscripciones
 from app.services.admin.users import cambiar_estado_usuario, cambiar_rol_usuario, detalle_usuario, listar_usuarios
 
@@ -54,6 +62,37 @@ def listar_usuarios_route(
         metadata={"buscar": buscar, "filtro": filtro, "limit": limit, "offset": offset, "count": len(resultado["items"])},
     )
     return resultado
+
+
+@router.get("/personal")
+def listar_personal_route(
+    buscar: str | None = Query(None),
+    filtro: str | None = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    _: int = Depends(require_admin),
+):
+    return listar_personal(db, buscar, filtro, limit, offset)
+
+
+@router.post("/personal")
+def crear_personal_route(
+    datos: PersonalCrear,
+    db: Session = Depends(get_db),
+    admin_id: int = Depends(require_admin),
+):
+    return crear_personal(db, datos, admin_id)
+
+
+@router.put("/personal/{usuario_id}")
+def actualizar_personal_route(
+    usuario_id: int,
+    datos: PersonalActualizar,
+    db: Session = Depends(get_db),
+    admin_id: int = Depends(require_admin),
+):
+    return actualizar_personal(db, usuario_id, datos, admin_id)
 
 
 @router.get("/usuarios/{target_usuario_id}")

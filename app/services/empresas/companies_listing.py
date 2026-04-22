@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.schemas.empresas import EmpresaCrear
 from app.services.comercial.accounts import create_commercial_user
+from app.services.empresas.access import aplicar_scope_empresas
 from app.services.empresas.common import empresa_to_dict
 
 logger = logging.getLogger(__name__)
@@ -17,10 +18,12 @@ def listar_empresas(
     buscar: str | None,
     limit: int,
     offset: int,
+    viewer_user_id: int,
 ):
     try:
         condiciones = []
         params: dict = {"limit": limit, "offset": offset}
+        aplicar_scope_empresas(db, condiciones, params, viewer_user_id)
         if activo is not None:
             condiciones.append("e.activo = :activo")
             params["activo"] = activo

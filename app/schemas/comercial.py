@@ -138,3 +138,25 @@ class LiquidacionCrear(BaseModel):
     periodo_desde: date | None = None
     periodo_hasta: date | None = None
     notas: str | None = Field(default=None, max_length=400)
+
+
+class ComercialAcuerdoCrear(BaseModel):
+    tipo: str
+    titulo: str = Field(min_length=2, max_length=180)
+    descripcion: str | None = Field(default=None, max_length=600)
+    estado: str | None = Field(default="vigente", max_length=40)
+    fecha_firma: date | None = None
+    fecha_vencimiento: date | None = None
+    archivo_url: str | None = Field(default=None, max_length=400)
+    notas: str | None = Field(default=None, max_length=1000)
+
+
+class ComercialAcuerdoActualizar(BaseModel):
+    tipo: str | None = Field(default=None, max_length=40)
+    titulo: str | None = Field(default=None, min_length=2, max_length=180)
+    descripcion: str | None = Field(default=None, max_length=600)
+    estado: str | None = Field(default=None, max_length=40)
+    fecha_firma: date | None = None
+    fecha_vencimiento: date | None = None
+    archivo_url: str | None = Field(default=None, max_length=400)
+    notas: str | None = Field(default=None, max_length=1000)

@@ -21,7 +21,7 @@ def listar_usuarios(
 ):
     try:
         params: dict = {"limit": limit, "offset": offset}
-        condiciones = ["COALESCE(rol, 'cliente') NOT IN ('broker', 'direct_seller', 'broker_seller')"]
+        condiciones = ["COALESCE(rol, 'cliente') NOT IN ('broker', 'direct_seller', 'broker_seller', 'admin', 'gestor_interno')"]
 
         if buscar:
             params["q"] = f"%{buscar.strip()}%"
