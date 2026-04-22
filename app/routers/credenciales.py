@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
@@ -24,6 +24,7 @@ def obtener_credencial_virtual_route(
 def validar_beneficio_token_route(
     token: str,
     request: Request,
+    response: Response,
     db: Session = Depends(get_db),
 ):
     return validar_beneficio_token(

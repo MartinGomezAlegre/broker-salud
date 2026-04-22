@@ -1,5 +1,5 @@
 import logging
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from typing import List, Optional
@@ -19,6 +19,7 @@ router = APIRouter(
 @limiter.limit("60/minute")
 def listar_planes(
     request: Request,
+    response: Response,
     tipo: Optional[str] = Query(None, description="'personal' o 'empresa'"),
     db: Session = Depends(get_db)
 ):

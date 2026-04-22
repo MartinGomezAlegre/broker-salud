@@ -1,7 +1,7 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -41,6 +41,7 @@ class LeadEmpresarialActualizar(BaseModel):
 @limiter.limit("3/hour")
 def crear_lead_empresarial(
     request: Request,
+    response: Response,
     datos: LeadEmpresarialCrear,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),

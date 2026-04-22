@@ -2,7 +2,7 @@ import logging
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -36,7 +36,7 @@ class NuevaContraseniaData(BaseModel):
 
 @router.post("/login")
 @limiter.limit("5/minute")
-def login(request: Request, datos: LoginData, db: Session = Depends(get_db)):
+def login(request: Request, response: Response, datos: LoginData, db: Session = Depends(get_db)):
     try:
         usuario = db.execute(
             text(
@@ -85,6 +85,7 @@ def login(request: Request, datos: LoginData, db: Session = Depends(get_db)):
 @limiter.limit("3/hour")
 def recuperar_contrasenia(
     request: Request,
+    response: Response,
     datos: RecuperarContraseniaData,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),

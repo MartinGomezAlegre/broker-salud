@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
@@ -15,6 +15,7 @@ router = APIRouter(prefix="/suscripciones", tags=["suscripciones"])
 @limiter.limit("10/hour")
 def contratar_plan_route(
     request: Request,
+    response: Response,
     datos: SuscripcionCrear,
     db: Session = Depends(get_db),
     usuario_id: int = Depends(get_current_user),

@@ -1,7 +1,7 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -53,6 +53,7 @@ def _perfil_payload(usuario) -> dict:
 @limiter.limit("5/hour")
 def crear_usuario(
     request: Request,
+    response: Response,
     usuario: UsuarioCrear,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),

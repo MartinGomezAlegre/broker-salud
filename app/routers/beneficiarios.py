@@ -1,7 +1,7 @@
 import logging
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -88,6 +88,7 @@ def listar_beneficiarios(
 @limiter.limit("20/day")
 def agregar_beneficiario(
     request: Request,
+    response: Response,
     datos: BeneficiarioCrear,
     db: Session = Depends(get_db),
     usuario_id: int = Depends(get_current_user),

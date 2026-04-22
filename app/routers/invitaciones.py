@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -18,6 +18,7 @@ class ActivarInvitacionData(BaseModel):
 @limiter.limit("30/hour")
 def obtener_invitacion_route(
     request: Request,
+    response: Response,
     token: str,
     db: Session = Depends(get_db),
 ):
@@ -31,6 +32,7 @@ def obtener_invitacion_route(
 @limiter.limit("10/hour")
 def activar_invitacion_route(
     request: Request,
+    response: Response,
     datos: ActivarInvitacionData,
     db: Session = Depends(get_db),
 ):

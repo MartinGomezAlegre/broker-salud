@@ -1,6 +1,6 @@
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, Response
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
@@ -26,6 +26,7 @@ admin_router = APIRouter(prefix="/admin/soporte", tags=["admin-soporte"])
 @limiter.limit("10/hour")
 def crear_ticket(
     request: Request,
+    response: Response,
     datos: TicketCrear,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
