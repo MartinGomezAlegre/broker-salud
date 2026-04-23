@@ -77,6 +77,7 @@ def detalle_empresa(db: Session, empresa_id: int):
             "contacto_cargo": empresa.contacto_cargo,
             "contacto_email": empresa.email_contacto,
             "contacto_telefono": empresa.telefono,
+            "visible_para_gestores": bool(getattr(empresa, "visible_para_gestores", False)),
             "admin_user_id": empresa.admin_user_id,
             "admin_access_email": admin_access.email if admin_access else None,
             "admin_access_name": " ".join(

@@ -43,7 +43,7 @@ def listar_empresas(
             GROUP BY e.id, e.razon_social, e.cuit, e.nombre_comercial, e.rubro,
                      e.direccion, e.localidad, e.provincia, e.responsabilidad_iva,
                      e.email_contacto, e.contacto_nombre, e.contacto_cargo, e.telefono, e.admin_user_id,
-                     e.activo, e.created_at,
+                     e.activo, e.created_at, e.visible_para_gestores,
                      admin_u.id, admin_u.nombre, admin_u.apellido, admin_u.email,
                      se.estado, se.plan_id, p.nombre, se.precio_por_empleado, se.precio_total,
                      se.periodicidad, se.fecha_inicio, se.fecha_fin, se.proximo_cobro
@@ -54,7 +54,7 @@ def listar_empresas(
             SELECT e.id, e.razon_social, e.cuit, e.nombre_comercial, e.rubro,
                    e.direccion, e.localidad, e.provincia, e.responsabilidad_iva,
                    e.email_contacto, e.contacto_nombre, e.contacto_cargo, e.telefono,
-                   e.activo, e.created_at,
+                   e.activo, e.created_at, e.visible_para_gestores,
                    admin_u.id AS admin_user_id,
                    admin_u.nombre AS admin_nombre,
                    admin_u.apellido AS admin_apellido,
@@ -92,6 +92,7 @@ def listar_empresas(
                 "admin_access_email": row.admin_access_email,
                 "admin_access_name": " ".join(part for part in [row.admin_nombre, row.admin_apellido] if part).strip() or None,
                 "activo": row.activo,
+                "visible_para_gestores": bool(row.visible_para_gestores),
                 "created_at": row.created_at.isoformat() if row.created_at else None,
                 "empleados_activos": row.empleados_activos or 0,
                 "cantidad_empleados": row.cantidad_empleados or 0,
@@ -145,11 +146,11 @@ def crear_empresa(db: Session, datos: EmpresaCrear):
             INSERT INTO empresas
               (razon_social, cuit, nombre_comercial, rubro, direccion, localidad,
                provincia, responsabilidad_iva, telefono, email_contacto, contacto_nombre, contacto_cargo,
-               admin_user_id, activo)
+               admin_user_id, activo, visible_para_gestores)
             VALUES
               (:razon_social, :cuit, :nombre_comercial, :rubro, :direccion, :localidad,
                :provincia, :responsabilidad_iva, :telefono, :email_contacto, :contacto_nombre, :contacto_cargo,
-               :admin_user_id, true)
+               :admin_user_id, true, :visible_para_gestores)
             RETURNING id
         """), {
             "razon_social": datos.razon_social,
@@ -165,6 +166,7 @@ def crear_empresa(db: Session, datos: EmpresaCrear):
             "contacto_nombre": datos.contacto_nombre,
             "contacto_cargo": datos.contacto_cargo,
             "admin_user_id": admin_user_id,
+            "visible_para_gestores": datos.visible_para_gestores,
         }).fetchone()
         db.commit()
 

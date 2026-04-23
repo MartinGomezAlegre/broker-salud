@@ -19,6 +19,7 @@ class EmpresaCrear(BaseModel):
     contacto_cargo: Optional[str] = None
     admin_access_email: Optional[str] = None
     admin_access_password: Optional[str] = None
+    visible_para_gestores: bool = False
 
 
 class EmpresaActualizar(BaseModel):
@@ -36,6 +37,7 @@ class EmpresaActualizar(BaseModel):
     contacto_cargo: Optional[str] = None
     admin_access_email: Optional[str] = None
     admin_access_password: Optional[str] = None
+    visible_para_gestores: Optional[bool] = None
 
 
 class CambiarEstadoEmpresa(BaseModel):

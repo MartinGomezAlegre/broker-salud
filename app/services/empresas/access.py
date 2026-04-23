@@ -25,15 +25,7 @@ def aplicar_scope_empresas(
 ) -> str:
     rol = obtener_rol_panel_empresas(db, usuario_id)
     if rol == "gestor_interno":
-        condiciones.append(
-            f"""EXISTS (
-                    SELECT 1
-                    FROM gestor_empresas_permitidas gep
-                    WHERE gep.usuario_id = :scope_usuario_id
-                      AND gep.empresa_id = {alias}.id
-                )"""
-        )
-        params["scope_usuario_id"] = usuario_id
+        condiciones.append(f"COALESCE({alias}.visible_para_gestores, false) = true")
     return rol
 
 
@@ -46,12 +38,12 @@ def asegurar_acceso_empresa(db: Session, usuario_id: int, empresa_id: int) -> st
         text(
             """
             SELECT 1
-            FROM gestor_empresas_permitidas
-            WHERE usuario_id = :usuario_id
-              AND empresa_id = :empresa_id
+            FROM empresas
+            WHERE id = :empresa_id
+              AND COALESCE(visible_para_gestores, false) = true
             """
         ),
-        {"usuario_id": usuario_id, "empresa_id": empresa_id},
+        {"empresa_id": empresa_id},
     ).fetchone()
     if not permitido:
         raise HTTPException(status_code=403, detail="No tenes acceso a esta empresa.")

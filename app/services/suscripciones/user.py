@@ -1,5 +1,5 @@
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from fastapi import HTTPException
 from sqlalchemy import text
@@ -20,6 +20,7 @@ from app.services.suscripciones.common import (
 )
 
 logger = logging.getLogger(__name__)
+RENOVACION_ANTICIPADA_DIAS = 7
 
 
 def contratar_plan(
@@ -40,7 +41,7 @@ def contratar_plan(
         referral_tracking = resolve_referral_tracking(db, datos.referral_code)
 
         vigente = db.execute(text("""
-            SELECT s.id, s.plan_id, s.estado, p.max_beneficiarios, p.tipo
+            SELECT s.id, s.plan_id, s.estado, s.fecha_vencimiento, p.max_beneficiarios, p.tipo
             FROM suscripciones s
             JOIN planes p ON p.id = s.plan_id
             WHERE s.usuario_id = :usuario_id
@@ -68,6 +69,14 @@ def contratar_plan(
 
         if vigente:
             if vigente.plan_id == datos.plan_id:
+                if _puede_renovar_mismo_plan(vigente):
+                    return _actualizar_suscripcion_existente(
+                        db=db,
+                        suscripcion_id=vigente.id,
+                        plan_id=datos.plan_id,
+                        precio_pagado=plan.precio_mensual,
+                        referral_tracking=referral_tracking,
+                    )
                 raise HTTPException(status_code=400, detail="Ya tenes este plan como plan actual")
 
             if vigente.estado in ("activa", "cancelacion_programada") and max_nuevo > max_actual:
@@ -272,3 +281,19 @@ def _actualizar_suscripcion_existente(
     }).fetchone()
     db.commit()
     return resultado
+
+
+def _puede_renovar_mismo_plan(vigente) -> bool:
+    if vigente.estado == "cancelacion_programada":
+        return True
+
+    if not vigente.fecha_vencimiento:
+        return False
+
+    fecha_vencimiento = vigente.fecha_vencimiento
+    if hasattr(fecha_vencimiento, "date"):
+        fecha_vencimiento = fecha_vencimiento.date()
+
+    hoy = datetime.utcnow().date()
+    dias_restantes = (fecha_vencimiento - hoy).days
+    return dias_restantes <= RENOVACION_ANTICIPADA_DIAS
