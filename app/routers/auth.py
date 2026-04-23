@@ -133,7 +133,13 @@ def recuperar_contrasenia(
 
 
 @router.post("/nueva-contrasenia")
-def nueva_contrasenia(datos: NuevaContraseniaData, db: Session = Depends(get_db)):
+@limiter.limit("5/hour")
+def nueva_contrasenia(
+    request: Request,
+    response: Response,
+    datos: NuevaContraseniaData,
+    db: Session = Depends(get_db),
+):
     try:
         try:
             nueva_contrasenia = validate_password_strength(datos.nueva_contrasenia)

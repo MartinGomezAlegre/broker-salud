@@ -157,8 +157,8 @@ ENABLE_REDOC=true
 QR_DEFAULT_BENEFIT_TYPE=farmacia
 FARMACIA_DESCUENTO_PORCENTAJE=40
 SERVICE_TOKEN=changeme_internal_service_token
-PAYMENT_MANUAL_ENABLED=true
-MERCADOPAGO_WEBHOOK_SECRET=
+PAYMENT_MANUAL_ENABLED=false
+MERCADOPAGO_WEBHOOK_SECRET=changeme_mercadopago_webhook_secret
 MERCADOPAGO_WEBHOOK_TOLERANCE_SECONDS=300
 RESEND_API_KEY=...
 ADMIN_EMAIL=admin@celdoctor.com
@@ -178,8 +178,8 @@ UVICORN_KEEP_ALIVE=30
 - `REDIS_URL` ya esta prevista para el siguiente paso de rate limiting y jobs compartidos.
 - `SERVICE_TOKEN` protege los endpoints internos de cron.
 - `JOB_QUEUE_NAME` y `JOB_RETRY_LIMIT` gobiernan la cola Redis simple usada por emails y jobs operativos.
-- `PAYMENT_MANUAL_ENABLED` permite apagar el alta manual de pagos en produccion.
-- `MERCADOPAGO_WEBHOOK_SECRET` se usa para validar la firma del webhook.
+- `PAYMENT_MANUAL_ENABLED` deberia quedar en `false` en entornos reales una vez que el cobro pase por gateway/webhook.
+- `MERCADOPAGO_WEBHOOK_SECRET` se usa para validar la firma del webhook y pasa a ser obligatoria en produccion cuando `PAYMENT_MANUAL_ENABLED=false`.
 
 ## Migraciones
 

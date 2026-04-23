@@ -90,6 +90,11 @@ def _build_settings() -> Settings:
     if app_env == "production":
         redoc_enabled = False if os.getenv("ENABLE_REDOC") is None else redoc_enabled
 
+    if app_env == "production" and not payment_manual_enabled and not mercadopago_webhook_secret:
+        raise ValueError(
+            "MERCADOPAGO_WEBHOOK_SECRET no esta configurada y es obligatoria cuando PAYMENT_MANUAL_ENABLED=false en produccion"
+        )
+
     return Settings(
         app_env=app_env,
         database_url=_normalize_database_url(database_url),
