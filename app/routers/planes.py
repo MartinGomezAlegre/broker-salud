@@ -1,11 +1,11 @@
 import logging
 from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.orm import Session
-from sqlalchemy import text
 from typing import List, Optional
 from app.database import get_db
 from app.limiter import limiter
 from app.schemas.planes import PlanRespuesta
+from app.services.catalogo import listar_planes_publicos
 
 logger = logging.getLogger(__name__)
 
@@ -23,17 +23,4 @@ def listar_planes(
     tipo: Optional[str] = Query(None, description="'personal' o 'empresa'"),
     db: Session = Depends(get_db)
 ):
-    if tipo == "personal":
-        planes = db.execute(
-            text("SELECT * FROM planes WHERE activo = true AND tipo IN ('personal', 'familiar')")
-        ).fetchall()
-    elif tipo == "empresa":
-        planes = db.execute(
-            text("SELECT * FROM planes WHERE activo = true AND tipo IN ('empresa', 'corporativo')")
-        ).fetchall()
-    else:
-        planes = db.execute(
-            text("SELECT * FROM planes WHERE activo = true")
-        ).fetchall()
-
-    return planes
+    return listar_planes_publicos(db, tipo)

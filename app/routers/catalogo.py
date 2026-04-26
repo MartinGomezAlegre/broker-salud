@@ -22,6 +22,7 @@ from app.services.catalogo import (
     historial_catalogo,
     listar_cupones,
     listar_planes_admin,
+    listar_servicios_catalogo,
     usos_cupon,
 )
 
@@ -42,6 +43,14 @@ def listar_planes_admin_route(
     _: int = Depends(require_admin),
 ):
     return listar_planes_admin(db)
+
+
+@router.get("/services")
+def listar_servicios_catalogo_route(
+    db: Session = Depends(get_db),
+    _: int = Depends(require_admin),
+):
+    return listar_servicios_catalogo(db)
 
 
 @router.post("/planes")

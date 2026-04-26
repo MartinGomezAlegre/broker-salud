@@ -11,6 +11,7 @@ from app.services.commercial_referrals import (
     build_referral_update,
     resolve_referral_tracking,
 )
+from app.services.catalogo import obtener_servicios_por_plan
 from app.services.suscripciones.common import (
     CICLO_DIAS,
     ESTADOS_VIGENTES,
@@ -70,23 +71,25 @@ def contratar_plan(
         if vigente:
             if vigente.plan_id == datos.plan_id:
                 if _puede_renovar_mismo_plan(vigente):
-                    return _actualizar_suscripcion_existente(
+                    _actualizar_suscripcion_existente(
                         db=db,
                         suscripcion_id=vigente.id,
                         plan_id=datos.plan_id,
                         precio_pagado=plan.precio_mensual,
                         referral_tracking=referral_tracking,
                     )
+                    return mi_suscripcion(db, usuario_id)
                 raise HTTPException(status_code=400, detail="Ya tenes este plan como plan actual")
 
             if vigente.estado in ("activa", "cancelacion_programada") and max_nuevo > max_actual:
-                return _actualizar_suscripcion_existente(
+                _actualizar_suscripcion_existente(
                     db=db,
                     suscripcion_id=vigente.id,
                     plan_id=datos.plan_id,
                     precio_pagado=plan.precio_mensual,
                     referral_tracking=referral_tracking,
                 )
+                return mi_suscripcion(db, usuario_id)
 
             raise HTTPException(status_code=400, detail="Ya tenes una suscripcion activa o pendiente de pago")
 
@@ -99,22 +102,22 @@ def contratar_plan(
         """), {"usuario_id": usuario_id}).fetchone()
 
         if historica:
-            return _actualizar_suscripcion_existente(
+            _actualizar_suscripcion_existente(
                 db=db,
                 suscripcion_id=historica.id,
                 plan_id=datos.plan_id,
                 precio_pagado=plan.precio_mensual,
                 referral_tracking=referral_tracking,
             )
+            return mi_suscripcion(db, usuario_id)
 
         fecha_inicio, fecha_vencimiento = ciclo_inicial()
         referral_columns, referral_values, referral_params = build_referral_insert(referral_tracking)
-        resultado = db.execute(text(f"""
+        db.execute(text(f"""
             INSERT INTO suscripciones
                 (usuario_id, plan_id, estado, fecha_inicio, fecha_vencimiento, precio_pagado{referral_columns})
             VALUES
                 (:usuario_id, :plan_id, 'pendiente_pago', :fecha_inicio, :fecha_vencimiento, :precio_pagado{referral_values})
-            RETURNING id, plan_id, estado, fecha_inicio, precio_pagado
         """), {
             "usuario_id": usuario_id,
             "plan_id": datos.plan_id,
@@ -122,10 +125,10 @@ def contratar_plan(
             "fecha_vencimiento": fecha_vencimiento,
             "precio_pagado": plan.precio_mensual,
             **referral_params,
-        }).fetchone()
+        })
         db.commit()
 
-        return resultado
+        return mi_suscripcion(db, usuario_id)
     except HTTPException:
         raise
     except Exception as exc:
@@ -179,6 +182,7 @@ def mi_suscripcion(
             suscripcion.tipo_plan,
             suscripcion.max_beneficiarios,
         )
+        plan_services = obtener_servicios_por_plan(db, suscripcion.plan_id)
 
         return {
             "id": suscripcion.id,
@@ -192,6 +196,7 @@ def mi_suscripcion(
             "max_beneficiarios": max_beneficiarios,
             "tipo_plan": suscripcion.tipo_plan,
             "fue_exportado": bool(exportado.exportado),
+            "services": plan_services,
         }
     except HTTPException:
         raise
@@ -258,10 +263,10 @@ def _actualizar_suscripcion_existente(
     plan_id: int,
     precio_pagado,
     referral_tracking: dict,
-):
+)-> None:
     fecha_inicio, fecha_vencimiento = ciclo_inicial()
     referral_set, referral_params = build_referral_update(referral_tracking)
-    resultado = db.execute(text(f"""
+    db.execute(text(f"""
         UPDATE suscripciones
         SET plan_id = :plan_id,
             estado = 'pendiente_pago',
@@ -270,7 +275,6 @@ def _actualizar_suscripcion_existente(
             precio_pagado = :precio_pagado
             {referral_set}
         WHERE id = :suscripcion_id
-        RETURNING id, plan_id, estado, fecha_inicio, precio_pagado
     """), {
         "suscripcion_id": suscripcion_id,
         "plan_id": plan_id,
@@ -278,9 +282,8 @@ def _actualizar_suscripcion_existente(
         "fecha_vencimiento": fecha_vencimiento,
         "precio_pagado": precio_pagado,
         **referral_params,
-    }).fetchone()
+    })
     db.commit()
-    return resultado
 
 
 def _puede_renovar_mismo_plan(vigente) -> bool:
