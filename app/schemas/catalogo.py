@@ -46,6 +46,64 @@ class ServiceCrear(BaseModel):
     activo: bool = True
 
 
+class MedicamentoCrear(BaseModel):
+    nombre: str
+    principio_activo: Optional[str] = None
+    presentacion: Optional[str] = None
+    laboratorio: Optional[str] = None
+    descripcion: Optional[str] = None
+    cobertura_resumen: Optional[str] = None
+    descuento_porcentaje: Optional[int] = Field(default=None, ge=0, le=100)
+    keywords: Optional[str] = None
+    activo: bool = True
+    orden_display: Optional[int] = None
+
+
+class MedicamentoActualizar(BaseModel):
+    nombre: Optional[str] = None
+    principio_activo: Optional[str] = None
+    presentacion: Optional[str] = None
+    laboratorio: Optional[str] = None
+    descripcion: Optional[str] = None
+    cobertura_resumen: Optional[str] = None
+    descuento_porcentaje: Optional[int] = Field(default=None, ge=0, le=100)
+    keywords: Optional[str] = None
+    activo: Optional[bool] = None
+    orden_display: Optional[int] = None
+
+
+class FarmaciaCrear(BaseModel):
+    nombre: str
+    direccion: str
+    localidad: Optional[str] = None
+    provincia: Optional[str] = None
+    telefono: Optional[str] = None
+    horario: Optional[str] = None
+    estado_atencion: Optional[str] = None
+    distancia_km: Optional[float] = Field(default=None, ge=0)
+    descuento_porcentaje: Optional[int] = Field(default=None, ge=0, le=100)
+    maps_url: Optional[str] = None
+    descripcion: Optional[str] = None
+    activo: bool = True
+    orden_display: Optional[int] = None
+
+
+class FarmaciaActualizar(BaseModel):
+    nombre: Optional[str] = None
+    direccion: Optional[str] = None
+    localidad: Optional[str] = None
+    provincia: Optional[str] = None
+    telefono: Optional[str] = None
+    horario: Optional[str] = None
+    estado_atencion: Optional[str] = None
+    distancia_km: Optional[float] = Field(default=None, ge=0)
+    descuento_porcentaje: Optional[int] = Field(default=None, ge=0, le=100)
+    maps_url: Optional[str] = None
+    descripcion: Optional[str] = None
+    activo: Optional[bool] = None
+    orden_display: Optional[int] = None
+
+
 class CuponCrear(BaseModel):
     codigo: str
     descripcion: Optional[str] = None

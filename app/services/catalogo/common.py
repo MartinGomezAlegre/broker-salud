@@ -82,4 +82,22 @@ def descripcion_historial(
     if accion == "eliminar_cupon":
         return f"Se elimino el cupon {codigo}"
 
+    medicamento = nuevos.get("nombre") or anteriores.get("nombre") or f"#{registro_id}"
+    if accion == "crear_medicamento":
+        return f"Se agrego el medicamento {medicamento} al vademecum"
+    if accion == "actualizar_medicamento":
+        return f"Se actualizaron los datos del medicamento {medicamento}"
+    if accion == "cambiar_estado_medicamento":
+        estado = "activo" if nuevos.get("activo") else "inactivo"
+        return f"El medicamento {medicamento} paso a estado {estado}"
+
+    farmacia = nuevos.get("nombre") or anteriores.get("nombre") or f"#{registro_id}"
+    if accion == "crear_farmacia":
+        return f"Se agrego la farmacia {farmacia} a la red adherida"
+    if accion == "actualizar_farmacia":
+        return f"Se actualizaron los datos de la farmacia {farmacia}"
+    if accion == "cambiar_estado_farmacia":
+        estado = "activa" if nuevos.get("activo") else "inactiva"
+        return f"La farmacia {farmacia} paso a estado {estado}"
+
     return accion.replace("_", " ").capitalize()

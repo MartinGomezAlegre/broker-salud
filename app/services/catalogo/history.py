@@ -28,6 +28,16 @@ def historial_catalogo(
                     'desactivar_cupon_por_usos',
                     'eliminar_cupon'
                ))
+               OR (tabla_afectada = 'vademecum_medicamentos' AND accion IN (
+                    'crear_medicamento',
+                    'actualizar_medicamento',
+                    'cambiar_estado_medicamento'
+               ))
+               OR (tabla_afectada = 'farmacias_adheridas' AND accion IN (
+                    'crear_farmacia',
+                    'actualizar_farmacia',
+                    'cambiar_estado_farmacia'
+               ))
             ORDER BY created_at DESC
             LIMIT :limit
         """), {"limit": limit}).fetchall()
