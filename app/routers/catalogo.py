@@ -38,6 +38,7 @@ from app.services.catalogo import (
     listar_servicios_catalogo,
     usos_cupon,
 )
+from app.services.suscripciones.common import require_suscripcion_activa
 
 router = APIRouter(
     prefix="/admin/catalogo",
@@ -230,8 +231,9 @@ def listar_medicamentos_cliente_route(
     q: str | None = Query(default=None, min_length=1, max_length=80),
     limit: int = Query(default=12, ge=1, le=50),
     db: Session = Depends(get_db),
-    _: int = Depends(get_current_user),
+    usuario_id: int = Depends(get_current_user),
 ):
+    require_suscripcion_activa(db, usuario_id)
     return listar_medicamentos_cliente(db, q=q, limit=limit)
 
 
@@ -241,6 +243,7 @@ def listar_farmacias_cliente_route(
     localidad: str | None = Query(default=None, min_length=1, max_length=80),
     limit: int = Query(default=12, ge=1, le=50),
     db: Session = Depends(get_db),
-    _: int = Depends(get_current_user),
+    usuario_id: int = Depends(get_current_user),
 ):
+    require_suscripcion_activa(db, usuario_id)
     return listar_farmacias_cliente(db, q=q, localidad=localidad, limit=limit)

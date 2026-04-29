@@ -102,6 +102,8 @@ def actualizar_plan(
                 text(f"UPDATE planes SET {', '.join(campos)} WHERE id = :id"),
                 params,
             )
+            if datos.precio_mensual is not None:
+                _propagar_precio_plan(db, plan_id, datos.precio_mensual)
             db.commit()
 
         plan_actualizado = db.execute(
@@ -120,6 +122,20 @@ def actualizar_plan(
     except Exception as exc:
         logger.error("Error interno: %s", exc, exc_info=True)
         raise HTTPException(status_code=500, detail="Error interno del servidor.")
+
+
+def _propagar_precio_plan(db: Session, plan_id: int, precio_mensual) -> None:
+    db.execute(
+        text(
+            """
+            UPDATE suscripciones
+            SET precio_pagado = :precio_mensual
+            WHERE plan_id = :plan_id
+              AND estado IN ('activa', 'pendiente_pago', 'cancelacion_programada')
+            """
+        ),
+        {"plan_id": plan_id, "precio_mensual": precio_mensual},
+    )
 
 
 def cambiar_estado_suscripcion(

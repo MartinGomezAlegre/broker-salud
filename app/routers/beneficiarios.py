@@ -9,6 +9,11 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_user
 from app.database import get_db
 from app.limiter import limiter
+from app.services.suscripciones.common import (
+    es_plan_individual,
+    normalizar_max_beneficiarios,
+    sincronizar_vencimientos_usuario,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -24,10 +29,7 @@ class BeneficiarioCrear(BaseModel):
 
 
 def _max_adicionales(tipo_plan: str | None, max_beneficiarios: int | None) -> int:
-    tipo = (tipo_plan or "").lower()
-    total = max_beneficiarios or 0
-    if tipo == "familiar":
-        total = min(total, 4)
+    total = normalizar_max_beneficiarios(tipo_plan, max_beneficiarios) or 0
     return max(total - 1, 0)
 
 
@@ -37,6 +39,7 @@ def listar_beneficiarios(
     usuario_id: int = Depends(get_current_user),
 ):
     try:
+        sincronizar_vencimientos_usuario(db, usuario_id)
         suscripcion = db.execute(
             text(
                 """
@@ -44,6 +47,7 @@ def listar_beneficiarios(
                 FROM suscripciones
                 WHERE usuario_id = :usuario_id
                   AND estado IN ('activa', 'cancelacion_programada')
+                  AND (fecha_vencimiento IS NULL OR fecha_vencimiento >= CURRENT_DATE)
                 ORDER BY COALESCE(fecha_vencimiento, created_at) DESC, created_at DESC
                 LIMIT 1
                 """
@@ -94,6 +98,7 @@ def agregar_beneficiario(
     usuario_id: int = Depends(get_current_user),
 ):
     try:
+        sincronizar_vencimientos_usuario(db, usuario_id)
         suscripcion = db.execute(
             text(
                 """
@@ -102,6 +107,7 @@ def agregar_beneficiario(
                 JOIN planes p ON p.id = s.plan_id
                 WHERE s.usuario_id = :usuario_id
                   AND s.estado IN ('activa', 'cancelacion_programada')
+                  AND (s.fecha_vencimiento IS NULL OR s.fecha_vencimiento >= CURRENT_DATE)
                 ORDER BY COALESCE(s.fecha_vencimiento, s.created_at) DESC, s.created_at DESC
                 LIMIT 1
                 """
@@ -113,7 +119,7 @@ def agregar_beneficiario(
             raise HTTPException(status_code=404, detail="No tenes una suscripcion activa")
 
         cupo_adicional = _max_adicionales(suscripcion.tipo, suscripcion.max_beneficiarios)
-        if cupo_adicional <= 0 or (suscripcion.tipo and suscripcion.tipo.lower() == "personal"):
+        if cupo_adicional <= 0 or es_plan_individual(suscripcion.tipo):
             raise HTTPException(status_code=400, detail="Tu plan no admite beneficiarios adicionales")
 
         cantidad_actual = db.execute(

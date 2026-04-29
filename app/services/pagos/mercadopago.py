@@ -163,6 +163,24 @@ def crear_intento_pago(
             detail="Solo se pueden iniciar pagos para suscripciones pendientes de pago",
         )
 
+    monto = float(suscripcion.precio_mensual or 0)
+    if monto <= 0:
+        raise HTTPException(status_code=400, detail="La suscripcion no tiene un monto valido para cobrar")
+
+    monto_actualizado = False
+    if float(suscripcion.precio_pagado or 0) != monto:
+        db.execute(
+            text(
+                """
+                UPDATE suscripciones
+                SET precio_pagado = :monto
+                WHERE id = :suscripcion_id
+                """
+            ),
+            {"monto": monto, "suscripcion_id": suscripcion.id},
+        )
+        monto_actualizado = True
+
     existente = db.execute(text("""
         SELECT id, suscripcion_id, usuario_id, proveedor, external_reference, estado, monto,
                moneda, checkout_url, payment_id, created_at, updated_at
@@ -177,11 +195,24 @@ def crear_intento_pago(
         "proveedor": proveedor,
     }).fetchone()
     if existente:
+        if float(existente.monto or 0) != monto:
+            existente = db.execute(
+                text(
+                    """
+                    UPDATE intentos_pago
+                    SET monto = :monto,
+                        updated_at = NOW()
+                    WHERE id = :id
+                    RETURNING id, suscripcion_id, usuario_id, proveedor, external_reference, estado, monto,
+                              moneda, checkout_url, payment_id, created_at, updated_at
+                    """
+                ),
+                {"id": existente.id, "monto": monto},
+            ).fetchone()
+            monto_actualizado = True
+        if monto_actualizado:
+            db.commit()
         return _serialize_intent(existente)
-
-    monto = float(suscripcion.precio_pagado or suscripcion.precio_mensual or 0)
-    if monto <= 0:
-        raise HTTPException(status_code=400, detail="La suscripcion no tiene un monto valido para cobrar")
 
     external_reference = uuid4().hex
     metadata = {

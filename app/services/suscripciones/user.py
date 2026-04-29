@@ -18,6 +18,7 @@ from app.services.suscripciones.common import (
     ciclo_inicial,
     ensure_fecha_vencimiento,
     normalizar_max_beneficiarios,
+    sincronizar_vencimientos_usuario,
 )
 
 logger = logging.getLogger(__name__)
@@ -31,6 +32,7 @@ def contratar_plan(
 ):
     try:
         ensure_fecha_vencimiento(db)
+        sincronizar_vencimientos_usuario(db, usuario_id)
 
         plan = db.execute(text("""
             SELECT id, nombre, descripcion, tipo, precio_mensual, max_beneficiarios
@@ -142,15 +144,22 @@ def mi_suscripcion(
 ):
     try:
         ensure_fecha_vencimiento(db)
+        sincronizar_vencimientos_usuario(db, usuario_id)
         suscripcion = db.execute(text("""
             SELECT s.*, p.nombre AS nombre_plan,
                    p.descripcion AS descripcion_plan,
                    p.max_beneficiarios,
-                   p.tipo AS tipo_plan
+                   p.tipo AS tipo_plan,
+                   p.precio_mensual AS precio_mensual_actual
             FROM suscripciones s
             JOIN planes p ON p.id = s.plan_id
             WHERE s.usuario_id = :usuario_id
               AND s.estado NOT IN ('cancelada', 'vencida')
+              AND (
+                s.estado = 'pendiente_pago'
+                OR s.fecha_vencimiento IS NULL
+                OR s.fecha_vencimiento >= CURRENT_DATE
+              )
             ORDER BY
                 CASE s.estado
                     WHEN 'activa' THEN 1
@@ -182,7 +191,16 @@ def mi_suscripcion(
             suscripcion.tipo_plan,
             suscripcion.max_beneficiarios,
         )
-        plan_services = obtener_servicios_por_plan(db, suscripcion.plan_id)
+        plan_services = (
+            obtener_servicios_por_plan(db, suscripcion.plan_id)
+            if suscripcion.estado in ("activa", "cancelacion_programada")
+            else []
+        )
+        precio_vigente = (
+            suscripcion.precio_mensual_actual
+            if suscripcion.precio_mensual_actual is not None
+            else suscripcion.precio_pagado
+        )
 
         return {
             "id": suscripcion.id,
@@ -190,7 +208,7 @@ def mi_suscripcion(
             "estado": suscripcion.estado,
             "fecha_inicio": suscripcion.fecha_inicio.isoformat() if suscripcion.fecha_inicio else None,
             "fecha_vencimiento": suscripcion.fecha_vencimiento.isoformat() if suscripcion.fecha_vencimiento else None,
-            "precio_pagado": float(suscripcion.precio_pagado) if suscripcion.precio_pagado is not None else None,
+            "precio_pagado": float(precio_vigente) if precio_vigente is not None else None,
             "nombre_plan": suscripcion.nombre_plan,
             "descripcion_plan": suscripcion.descripcion_plan,
             "max_beneficiarios": max_beneficiarios,
@@ -211,6 +229,7 @@ def cancelar_mi_suscripcion(
 ):
     try:
         ensure_fecha_vencimiento(db)
+        sincronizar_vencimientos_usuario(db, usuario_id)
         suscripcion = db.execute(text("""
             SELECT id, estado, fecha_inicio, fecha_vencimiento
             FROM suscripciones

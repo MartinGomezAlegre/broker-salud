@@ -209,6 +209,8 @@ def actualizar_plan_catalogo(
                 ),
                 {"id": plan_id, **cambios},
             )
+            if "precio_mensual" in cambios:
+                _propagar_precio_plan(db, plan_id, cambios["precio_mensual"])
 
         if service_ids_input is not None:
             service_ids = _validate_service_ids(db, service_ids_input)
@@ -292,6 +294,20 @@ def _replace_plan_services(db: Session, plan_id: int, service_ids: list[int]) ->
             ),
             {"plan_id": plan_id, "service_id": service_id},
         )
+
+
+def _propagar_precio_plan(db: Session, plan_id: int, precio_mensual) -> None:
+    db.execute(
+        text(
+            """
+            UPDATE suscripciones
+            SET precio_pagado = :precio_mensual
+            WHERE plan_id = :plan_id
+              AND estado IN ('activa', 'pendiente_pago', 'cancelacion_programada')
+            """
+        ),
+        {"plan_id": plan_id, "precio_mensual": precio_mensual},
+    )
 
 
 def _attach_services_to_plans(db: Session, plans: list[dict[str, Any]], plan_ids: list[int]):
